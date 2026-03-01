@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const slugify = require("../utils/slugify");
 
 const workSchema = new mongoose.Schema({
   title: {
@@ -13,6 +14,7 @@ const workSchema = new mongoose.Schema({
     type: Number,
     required: true,
   },
+  image: String,
 });
 const artisanSchema = new mongoose.Schema(
   {
@@ -31,4 +33,11 @@ const artisanSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-export default mongoose.model("Artisan", artisanSchema);
+artisanSchema.pre("save", function (next) {
+  if (this.isModified("name") && !this.slug) {
+    this.slug = slugify(this.name);
+  }
+  next();
+});
+
+module.exports = mongoose.model("Artisan", artisanSchema);
