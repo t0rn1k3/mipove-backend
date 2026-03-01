@@ -1,19 +1,34 @@
 const express = require("express");
 const cors = require("cors");
 const artisanRoutes = require("./routes/artisanRoutes");
-const errorHandler = require("./middlewares/errorHandler");
+const authRoutes = require("./routes/authRoutes");
+const {
+  globalErrorHandler,
+  pageNotFound,
+} = require("./middlewares/errorHandler");
 
 const app = express();
 
-app.use(cors());
-app.use(express.json());
+// CORS: allow frontend origin from env (like school-system)
+const frontendOrigin = process.env.FRONTEND_URL || "http://localhost:3000";
+app.use(
+  cors({
+    origin: frontendOrigin,
+    credentials: true,
+  })
+);
 
-app.use("/api/artisans", artisanRoutes);
+app.use(express.json());
 
 app.get("/api/health", (req, res) => {
   res.json({ success: true, message: "Mipove API is running" });
 });
 
-app.use(errorHandler);
+app.use("/api/auth", authRoutes);
+app.use("/api/artisans", artisanRoutes);
+
+// 404 - must be after all routes (like school-system)
+app.use(pageNotFound);
+app.use(globalErrorHandler);
 
 module.exports = app;
