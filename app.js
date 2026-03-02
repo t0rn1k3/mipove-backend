@@ -1,4 +1,5 @@
 const express = require("express");
+const path = require("path");
 const cors = require("cors");
 const artisanRoutes = require("./routes/artisanRoutes");
 const authRoutes = require("./routes/authRoutes");
@@ -18,7 +19,17 @@ app.use(
   })
 );
 
-app.use(express.json());
+app.use(
+  express.json({
+    type: (req) => {
+      const ct = req.headers["content-type"] || "";
+      return ct.includes("application/json") && !ct.includes("multipart");
+    },
+  })
+);
+
+// Serve uploaded profile images
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 app.get("/api/health", (req, res) => {
   res.json({ success: true, message: "Mipove API is running" });

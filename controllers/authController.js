@@ -43,6 +43,7 @@ const registerUser = asyncHandler(async (req, res) => {
       email: user.email,
       phone: user.phone,
       role: user.role,
+      image: user.image || "",
       password: hashedPassword,
     },
     token,
@@ -89,13 +90,14 @@ const registerMaster = asyncHandler(async (req, res) => {
       email: user.email,
       phone: user.phone,
       role: user.role,
+      image: user.image || "",
       password: hashedPassword,
     },
     token,
   });
 });
 
-// @desc    Login user or professional
+// @desc    Login user or master
 // @route   POST /api/auth/login
 // @access  Public
 const login = asyncHandler(async (req, res) => {
@@ -133,8 +135,65 @@ const login = asyncHandler(async (req, res) => {
       email: user.email,
       phone: user.phone,
       role: user.role,
+      image: user.image || "",
     },
     token,
+  });
+});
+
+// @desc    Update profile (name, phone, email, password, image)
+// @route   PUT /api/auth/profile
+// @access  Private
+const updateProfile = asyncHandler(async (req, res) => {
+  const { name, phone, email, password } = req.body;
+  const userId = req.user._id;
+
+  const updateData = {};
+
+  if (name) updateData.name = name.trim();
+  if (phone !== undefined) updateData.phone = phone.trim();
+
+  if (email) {
+    const existing = await User.findOne({
+      email: email.toLowerCase().trim(),
+      _id: { $ne: userId },
+    });
+    if (existing) {
+      const err = new Error("Email already in use by another account");
+      err.statusCode = 409;
+      throw err;
+    }
+    updateData.email = email.toLowerCase().trim();
+  }
+
+  if (password) {
+    const { hashPassword } = require("../utils/helpers");
+    updateData.password = await hashPassword(password);
+  }
+
+  if (req.file && req.file.filename) {
+    updateData.image = `/uploads/profiles/${req.file.filename}`;
+  }
+
+  if (Object.keys(updateData).length === 0) {
+    const user = await User.findById(userId).select("-password");
+    return res.json({
+      success: true,
+      data: user,
+      message: "No fields to update",
+    });
+  }
+
+  const user = await User.findByIdAndUpdate(
+    userId,
+    updateData,
+    { new: true, runValidators: true }
+  ).select("-password");
+
+  res.json({
+    success: true,
+    data: user,
+    message: "Profile updated successfully",
   });
 });
 
@@ -154,4 +213,5 @@ module.exports = {
   registerMaster,
   login,
   getMe,
+  updateProfile,
 };

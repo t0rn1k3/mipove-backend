@@ -18,6 +18,11 @@ const userSchema = new mongoose.Schema(
       required: true,
       default: "user",
     },
+    image: {
+      type: String,
+      default: "",
+      trim: true,
+    },
   },
   { timestamps: true }
 );
