@@ -77,11 +77,20 @@ const getArtisanBySlug = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Create artisan
+// @desc    Create artisan (masters get one auto-created on registration; this allows manual create if needed)
 // @route   POST /api/artisans
-// @access  Public (protect later with auth)
+// @access  Private (master)
 const createArtisan = asyncHandler(async (req, res) => {
-  const artisan = await Artisan.create(req.body);
+  const existing = await Artisan.findOne({ user: req.user._id });
+  if (existing) {
+    const err = new Error("You already have an artisan profile");
+    err.statusCode = 409;
+    throw err;
+  }
+  const artisan = await Artisan.create({
+    ...req.body,
+    user: req.user._id,
+  });
   res.status(201).json({
     success: true,
     data: artisan,
@@ -90,10 +99,10 @@ const createArtisan = asyncHandler(async (req, res) => {
 
 // @desc    Update artisan
 // @route   PUT /api/artisans/:slug
-// @access  Public (protect later with auth)
+// @access  Private (master, own artisan only)
 const updateArtisan = asyncHandler(async (req, res) => {
   const artisan = await Artisan.findOneAndUpdate(
-    { slug: req.params.slug },
+    { slug: req.params.slug, user: req.user._id },
     req.body,
     { new: true, runValidators: true }
   ).select("-__v");
@@ -112,9 +121,12 @@ const updateArtisan = asyncHandler(async (req, res) => {
 
 // @desc    Delete artisan
 // @route   DELETE /api/artisans/:slug
-// @access  Public (protect later with auth)
+// @access  Private (master, own artisan only)
 const deleteArtisan = asyncHandler(async (req, res) => {
-  const artisan = await Artisan.findOneAndDelete({ slug: req.params.slug });
+  const artisan = await Artisan.findOneAndDelete({
+    slug: req.params.slug,
+    user: req.user._id,
+  });
 
   if (!artisan) {
     const err = new Error("Artisan not found");

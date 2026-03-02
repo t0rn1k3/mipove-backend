@@ -1,4 +1,6 @@
 const User = require("../models/User");
+const Artisan = require("../models/Artisan");
+const slugify = require("../utils/slugify");
 const asyncHandler = require("express-async-handler");
 const { hashPassword } = require("../utils/helpers");
 
@@ -145,6 +147,16 @@ const createMaster = asyncHandler(async (req, res) => {
     phone: phone || "",
     password: hashedPassword,
     role: "master",
+  });
+
+  const slug =
+    slugify(name) + "-" + user._id.toString().slice(-6);
+  await Artisan.create({
+    user: user._id,
+    name,
+    email: email.toLowerCase().trim(),
+    phone: phone || "",
+    slug,
   });
 
   const data = user.toObject();

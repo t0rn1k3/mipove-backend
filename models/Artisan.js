@@ -18,6 +18,12 @@ const workSchema = new mongoose.Schema({
 });
 const artisanSchema = new mongoose.Schema(
   {
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      unique: true,
+      sparse: true,
+    },
     name: { type: String, required: true },
     specialty: String,
     location: String,

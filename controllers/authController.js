@@ -1,4 +1,6 @@
 const User = require("../models/User");
+const Artisan = require("../models/Artisan");
+const slugify = require("../utils/slugify");
 const asyncHandler = require("express-async-handler");
 const generateToken = require("../utils/generateToken");
 const { hashPassword, isPasswordMatched } = require("../utils/helpers");
@@ -133,6 +135,16 @@ const registerMaster = asyncHandler(async (req, res) => {
     role: "master",
   });
 
+  const slug =
+    slugify(name) + "-" + user._id.toString().slice(-6);
+  await Artisan.create({
+    user: user._id,
+    name,
+    email: email.toLowerCase().trim(),
+    phone: phone || "",
+    slug,
+  });
+
   const token = generateToken(user._id);
 
   res.status(201).json({
@@ -144,7 +156,6 @@ const registerMaster = asyncHandler(async (req, res) => {
       phone: user.phone,
       role: user.role,
       image: user.image || "",
-      password: hashedPassword,
     },
     token,
   });
