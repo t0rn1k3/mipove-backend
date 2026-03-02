@@ -50,6 +50,59 @@ const registerUser = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Register admin
+// @route   POST /api/auth/register/admin
+// @access  Public (requires ADMIN_SECRET in body if set in env)
+const registerAdmin = asyncHandler(async (req, res) => {
+  const body = req.body || {};
+  const { name, email, phone, password, adminSecret } = body;
+
+  if (process.env.ADMIN_SECRET && adminSecret !== process.env.ADMIN_SECRET) {
+    const err = new Error("Invalid admin secret");
+    err.statusCode = 403;
+    throw err;
+  }
+
+  if (!name || !email || !password) {
+    const err = new Error("Please provide name, email, and password");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const existingUser = await User.findOne({
+    email: email.toLowerCase().trim(),
+  });
+  if (existingUser) {
+    const err = new Error("User already exists with this email");
+    err.statusCode = 409;
+    throw err;
+  }
+
+  const hashedPassword = await hashPassword(password);
+  const user = await User.create({
+    name,
+    email: email.toLowerCase().trim(),
+    phone: phone || "",
+    password: hashedPassword,
+    role: "admin",
+  });
+
+  const token = generateToken(user._id);
+
+  res.status(201).json({
+    success: true,
+    data: {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+      image: user.image || "",
+    },
+    token,
+  });
+});
+
 // @desc    Register master (artisan/professional)
 // @route   POST /api/auth/register/master
 // @access  Public
@@ -110,11 +163,17 @@ const login = asyncHandler(async (req, res) => {
   }
 
   const user = await User.findOne({ email: email.toLowerCase().trim() }).select(
-    "+password"
+    "+password",
   );
   if (!user) {
     const err = new Error("Invalid login credentials");
     err.statusCode = 401;
+    throw err;
+  }
+
+  if (user.isBlocked) {
+    const err = new Error("Account is blocked. Contact support.");
+    err.statusCode = 403;
     throw err;
   }
 
@@ -184,11 +243,10 @@ const updateProfile = asyncHandler(async (req, res) => {
     });
   }
 
-  const user = await User.findByIdAndUpdate(
-    userId,
-    updateData,
-    { new: true, runValidators: true }
-  ).select("-password");
+  const user = await User.findByIdAndUpdate(userId, updateData, {
+    new: true,
+    runValidators: true,
+  }).select("-password");
 
   res.json({
     success: true,
@@ -210,6 +268,7 @@ const getMe = asyncHandler(async (req, res) => {
 
 module.exports = {
   registerUser,
+  registerAdmin,
   registerMaster,
   login,
   getMe,

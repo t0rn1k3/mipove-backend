@@ -3,6 +3,7 @@ const path = require("path");
 const cors = require("cors");
 const artisanRoutes = require("./routes/artisanRoutes");
 const authRoutes = require("./routes/authRoutes");
+const adminRoutes = require("./routes/adminRoutes");
 const {
   globalErrorHandler,
   pageNotFound,
@@ -16,7 +17,7 @@ app.use(
   cors({
     origin: frontendOrigin,
     credentials: true,
-  })
+  }),
 );
 
 app.use(
@@ -25,7 +26,7 @@ app.use(
       const ct = req.headers["content-type"] || "";
       return ct.includes("application/json") && !ct.includes("multipart");
     },
-  })
+  }),
 );
 
 // Serve uploaded profile images
@@ -37,6 +38,7 @@ app.get("/api/health", (req, res) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/artisans", artisanRoutes);
+app.use("/api/admin", adminRoutes);
 
 // 404 - must be after all routes (like school-system)
 app.use(pageNotFound);

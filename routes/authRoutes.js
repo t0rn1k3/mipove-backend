@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const {
   registerUser,
+  registerAdmin,
   registerMaster,
   login,
   getMe,
@@ -21,6 +22,7 @@ const handleUpload = (req, res, next) => {
 };
 
 router.post("/register/user", registerUser);
+router.post("/register/admin", registerAdmin);
 router.post("/register/master", registerMaster);
 router.post("/login", login);
 

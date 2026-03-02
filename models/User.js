@@ -14,9 +14,17 @@ const userSchema = new mongoose.Schema(
     password: { type: String, required: true, minlength: 6, select: false },
     role: {
       type: String,
-      enum: ["user", "master"],
+      enum: ["user", "master", "admin"],
       required: true,
       default: "user",
+    },
+    isBlocked: {
+      type: Boolean,
+      default: false,
+    },
+    lastActiveAt: {
+      type: Date,
+      default: null,
     },
     image: {
       type: String,
