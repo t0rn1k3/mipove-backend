@@ -1,11 +1,12 @@
 const User = require("../models/User");
 const Master = require("../models/Master");
+const Admin = require("../models/Admin");
 const asyncHandler = require("express-async-handler");
 const verifyToken = require("../utils/verifyToken");
 
 /**
- * Protect routes - verify JWT and attach user/master to req
- * Users (clients, admins) from users collection; masters from masters collection
+ * Protect routes - verify JWT and attach user/master/admin to req
+ * Users from users collection; masters from masters collection; admins from admins collection
  */
 const protect = asyncHandler(async (req, res, next) => {
   const token = req.headers?.authorization?.split(" ")[1];
@@ -38,6 +39,21 @@ const protect = asyncHandler(async (req, res, next) => {
     req.user = master.toObject();
     req.user._id = master._id;
     req.user.role = "master";
+  } else if (decoded.type === "admin") {
+    const admin = await Admin.findById(decoded.id).select("-password");
+    if (!admin) {
+      const err = new Error("Access denied. Admin not found.");
+      err.statusCode = 401;
+      throw err;
+    }
+    if (admin.isBlocked) {
+      const err = new Error("Account is blocked. Contact support.");
+      err.statusCode = 403;
+      throw err;
+    }
+    req.user = admin.toObject();
+    req.user._id = admin._id;
+    req.user.role = "admin";
   } else {
     const user = await User.findById(decoded.id).select("-password");
     if (!user) {

@@ -1,8 +1,8 @@
 const jwt = require("jsonwebtoken");
 
 /**
- * @param {string} id - User _id or Master _id
- * @param {'user'|'master'} type - 'user' for users collection, 'master' for masters collection
+ * @param {string} id - User _id, Master _id, or Admin _id
+ * @param {'user'|'master'|'admin'} type - which collection the account is in
  */
 const generateToken = (id, type) => {
   return jwt.sign(

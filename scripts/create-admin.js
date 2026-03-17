@@ -8,7 +8,7 @@
 require("dotenv").config();
 const mongoose = require("mongoose");
 const readline = require("readline");
-const User = require("../models/User");
+const Admin = require("../models/Admin");
 const { hashPassword } = require("../utils/helpers");
 
 const rl = readline.createInterface({
@@ -42,24 +42,23 @@ async function createAdmin() {
     process.exit(1);
   }
 
-  const existing = await User.findOne({ email });
+  const existing = await Admin.findOne({ email });
   if (existing) {
-    console.error("User with this email already exists.");
+    console.error("Admin with this email already exists.");
     process.exit(1);
   }
 
   const hashed = await hashPassword(password);
-  const user = await User.create({
+  const admin = await Admin.create({
     name,
     email,
     phone: "",
     password: hashed,
-    role: "admin",
   });
 
   console.log("\nAdmin created successfully:");
-  console.log("  ID:", user._id.toString());
-  console.log("  Email:", user.email);
+  console.log("  ID:", admin._id.toString());
+  console.log("  Email:", admin.email);
   console.log(
     "\nLogin at /join and use this account. The Admin link will appear in the navbar.",
   );

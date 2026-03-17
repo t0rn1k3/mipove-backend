@@ -1,5 +1,6 @@
 const User = require("../models/User");
 const Master = require("../models/Master");
+const Admin = require("../models/Admin");
 const slugify = require("../utils/slugify");
 const asyncHandler = require("express-async-handler");
 const generateToken = require("../utils/generateToken");
@@ -51,7 +52,7 @@ const registerUser = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Register admin
+// @desc    Register admin - creates in admins collection
 // @route   POST /api/auth/admin/register
 // @access  Public (requires ADMIN_SECRET in body if set in env)
 const registerAdmin = asyncHandler(async (req, res) => {
@@ -70,35 +71,37 @@ const registerAdmin = asyncHandler(async (req, res) => {
     throw err;
   }
 
-  const existingUser = await User.findOne({
-    email: email.toLowerCase().trim(),
-  });
-  if (existingUser) {
-    const err = new Error("User already exists with this email");
+  const emailNorm = email.toLowerCase().trim();
+  const [existingUser, existingMaster, existingAdmin] = await Promise.all([
+    User.findOne({ email: emailNorm }),
+    Master.findOne({ email: emailNorm }),
+    Admin.findOne({ email: emailNorm }),
+  ]);
+  if (existingUser || existingMaster || existingAdmin) {
+    const err = new Error("Account already exists with this email");
     err.statusCode = 409;
     throw err;
   }
 
   const hashedPassword = await hashPassword(password);
-  const user = await User.create({
+  const admin = await Admin.create({
     name,
-    email: email.toLowerCase().trim(),
+    email: emailNorm,
     phone: phone || "",
     password: hashedPassword,
-    role: "admin",
   });
 
-  const token = generateToken(user._id, "user");
+  const token = generateToken(admin._id, "admin");
 
   res.status(201).json({
     success: true,
     data: {
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      phone: user.phone,
-      role: user.role,
-      image: user.image || "",
+      _id: admin._id,
+      name: admin.name,
+      email: admin.email,
+      phone: admin.phone || "",
+      role: "admin",
+      image: admin.image || "",
     },
     token,
   });
@@ -198,45 +201,75 @@ const login = asyncHandler(async (req, res) => {
   const master = await Master.findOne({ email: emailNorm }).select(
     "+password",
   );
-  if (!master) {
-    const err = new Error("Invalid login credentials");
-    err.statusCode = 401;
-    throw err;
+  if (master) {
+    if (master.isBlocked) {
+      const err = new Error("Account is blocked. Contact support.");
+      err.statusCode = 403;
+      throw err;
+    }
+    const isMatch = await isPasswordMatched(password, master.password);
+    if (!isMatch) {
+      const err = new Error("Invalid login credentials");
+      err.statusCode = 401;
+      throw err;
+    }
+    const token = generateToken(master._id, "master");
+    return res.json({
+      success: true,
+      data: {
+        _id: master._id,
+        name: master.name,
+        email: master.email,
+        phone: master.phone || "",
+        role: "master",
+        image: master.image || "",
+        slug: master.slug,
+      },
+      token,
+    });
   }
-  if (master.isBlocked) {
-    const err = new Error("Account is blocked. Contact support.");
-    err.statusCode = 403;
-    throw err;
+
+  const admin = await Admin.findOne({ email: emailNorm }).select("+password");
+  if (admin) {
+    if (admin.isBlocked) {
+      const err = new Error("Account is blocked. Contact support.");
+      err.statusCode = 403;
+      throw err;
+    }
+    const isMatch = await isPasswordMatched(password, admin.password);
+    if (!isMatch) {
+      const err = new Error("Invalid login credentials");
+      err.statusCode = 401;
+      throw err;
+    }
+    const token = generateToken(admin._id, "admin");
+    return res.json({
+      success: true,
+      data: {
+        _id: admin._id,
+        name: admin.name,
+        email: admin.email,
+        phone: admin.phone || "",
+        role: "admin",
+        image: admin.image || "",
+      },
+      token,
+    });
   }
-  const isMatch = await isPasswordMatched(password, master.password);
-  if (!isMatch) {
-    const err = new Error("Invalid login credentials");
-    err.statusCode = 401;
-    throw err;
-  }
-  const token = generateToken(master._id, "master");
-  return res.json({
-    success: true,
-    data: {
-      _id: master._id,
-      name: master.name,
-      email: master.email,
-      phone: master.phone || "",
-      role: "master",
-      image: master.image || "",
-      slug: master.slug,
-    },
-    token,
-  });
+
+  const err = new Error("Invalid login credentials");
+  err.statusCode = 401;
+  throw err;
 });
 
 // @desc    Update profile (name, phone, email, password, image)
 // @route   PUT /api/auth/profile
-// @access  Private (works for both users and masters)
+// @access  Private (works for users, masters, and admins)
 const updateProfile = asyncHandler(async (req, res) => {
   const { name, phone, email, password } = req.body;
   const accountId = req.user._id;
   const isMaster = req.user.role === "master";
+  const isAdmin = req.user.role === "admin";
 
   const updateData = {};
   if (name) updateData.name = name.trim();
@@ -246,6 +279,16 @@ const updateProfile = asyncHandler(async (req, res) => {
     const emailNorm = email.toLowerCase().trim();
     if (isMaster) {
       const existing = await Master.findOne({
+        email: emailNorm,
+        _id: { $ne: accountId },
+      });
+      if (existing) {
+        const err = new Error("Email already in use by another account");
+        err.statusCode = 409;
+        throw err;
+      }
+    } else if (isAdmin) {
+      const existing = await Admin.findOne({
         email: emailNorm,
         _id: { $ne: accountId },
       });
@@ -280,9 +323,12 @@ const updateProfile = asyncHandler(async (req, res) => {
   if (Object.keys(updateData).length === 0) {
     const doc = isMaster
       ? await Master.findById(accountId).select("-password")
-      : await User.findById(accountId).select("-password");
+      : isAdmin
+        ? await Admin.findById(accountId).select("-password")
+        : await User.findById(accountId).select("-password");
     const data = doc.toObject ? doc.toObject() : doc;
     if (isMaster) data.role = "master";
+    if (isAdmin) data.role = "admin";
     return res.json({
       success: true,
       data,
@@ -295,13 +341,19 @@ const updateProfile = asyncHandler(async (req, res) => {
         new: true,
         runValidators: true,
       }).select("-password")
-    : await User.findByIdAndUpdate(accountId, updateData, {
+    : isAdmin
+      ? await Admin.findByIdAndUpdate(accountId, updateData, {
+          new: true,
+          runValidators: true,
+        }).select("-password")
+      : await User.findByIdAndUpdate(accountId, updateData, {
         new: true,
         runValidators: true,
       }).select("-password");
 
   const data = doc.toObject ? doc.toObject() : doc;
   if (isMaster) data.role = "master";
+  if (isAdmin) data.role = "admin";
 
   res.json({
     success: true,
@@ -310,16 +362,20 @@ const updateProfile = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Get current logged-in user or master
+// @desc    Get current logged-in user, master, or admin
 // @route   GET /api/auth/me
 // @access  Private
 const getMe = asyncHandler(async (req, res) => {
   const isMaster = req.user.role === "master";
+  const isAdmin = req.user.role === "admin";
   const doc = isMaster
     ? await Master.findById(req.user._id).select("-password")
-    : await User.findById(req.user._id).select("-password");
+    : isAdmin
+      ? await Admin.findById(req.user._id).select("-password")
+      : await User.findById(req.user._id).select("-password");
   const data = doc.toObject ? doc.toObject() : doc;
   if (isMaster) data.role = "master";
+  if (isAdmin) data.role = "admin";
   res.json({
     success: true,
     data,
