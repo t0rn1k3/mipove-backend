@@ -2,11 +2,28 @@ const Master = require("../models/Master");
 const Rating = require("../models/Rating");
 const asyncHandler = require("express-async-handler");
 
-// @desc    Get all masters (with average rating)
+// @desc    Get all masters (public list, non-blocked only)
 // @route   GET /api/masters
 // @access  Public
+// Query: specialty (filter), search (name or specialty)
 const getMasters = asyncHandler(async (req, res) => {
-  const masters = await Master.find().select("-__v").lean();
+  const { specialty, search } = req.query;
+  const filter = { isBlocked: false };
+
+  if (specialty && String(specialty).trim()) {
+    filter.specialty = new RegExp(String(specialty).trim(), "i");
+  }
+  if (search && String(search).trim()) {
+    const term = new RegExp(String(search).trim(), "i");
+    filter.$or = [
+      { name: term },
+      { specialty: term },
+    ];
+  }
+
+  const masters = await Master.find(filter)
+    .select("name slug image specialty location")
+    .lean();
 
   const masterIds = masters.map((m) => m._id);
   const stats = await Rating.aggregate([
@@ -28,14 +45,23 @@ const getMasters = asyncHandler(async (req, res) => {
     };
   });
 
-  masters.forEach((m) => {
-    m.rating = statsMap[m._id.toString()] || { average: 0, count: 0 };
+  const data = masters.map((m) => {
+    const item = {
+      _id: m._id,
+      name: m.name,
+      slug: m.slug,
+      image: m.image || "",
+      specialty: m.specialty || "",
+      location: m.location || "",
+    };
+    item.rating = statsMap[m._id.toString()] || { average: 0, count: 0 };
+    return item;
   });
 
   res.json({
     success: true,
-    count: masters.length,
-    data: masters,
+    count: data.length,
+    data,
   });
 });
 

@@ -270,11 +270,21 @@ const login = asyncHandler(async (req, res) => {
   throw err;
 });
 
-// @desc    Update profile (name, phone, email, password, image)
-// @route   PUT /api/auth/profile
+// @desc    Update profile (name, phone, email, password, image; masters: specialty, location, bio, instagram, website)
+// @route   PUT/PATCH /api/auth/profile, PATCH/PUT /api/auth/me
 // @access  Private (works for users, masters, and admins)
 const updateProfile = asyncHandler(async (req, res) => {
-  const { name, phone, email, password } = req.body;
+  const {
+    name,
+    phone,
+    email,
+    password,
+    specialty,
+    location,
+    bio,
+    instagram,
+    website,
+  } = req.body;
   const accountId = req.user._id;
   const isMaster = req.user.role === "master";
   const isAdmin = req.user.role === "admin";
@@ -326,6 +336,17 @@ const updateProfile = asyncHandler(async (req, res) => {
 
   if (req.file && req.file.filename) {
     updateData.image = `/uploads/profiles/${req.file.filename}`;
+  } else if (req.body?.image !== undefined) {
+    updateData.image = String(req.body.image || "").trim();
+  }
+
+  // Master-specific fields
+  if (isMaster) {
+    if (specialty !== undefined) updateData.specialty = specialty?.trim() || "";
+    if (location !== undefined) updateData.location = location?.trim() || "";
+    if (bio !== undefined) updateData.bio = bio?.trim() || "";
+    if (instagram !== undefined) updateData.instagram = instagram?.trim() || "";
+    if (website !== undefined) updateData.website = website?.trim() || "";
   }
 
   if (Object.keys(updateData).length === 0) {
