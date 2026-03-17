@@ -3,13 +3,21 @@ const Master = require("../models/Master");
 const Admin = require("../models/Admin");
 const asyncHandler = require("express-async-handler");
 const verifyToken = require("../utils/verifyToken");
+const { COOKIE_NAME } = require("../utils/setAuthCookie");
+
+/**
+ * Extract token: cookie first, then Authorization Bearer header
+ */
+const getToken = (req) => {
+  return req.cookies?.[COOKIE_NAME] || req.headers?.authorization?.split(" ")[1];
+};
 
 /**
  * Protect routes - verify JWT and attach user/master/admin to req
- * Users from users collection; masters from masters collection; admins from admins collection
+ * Reads token from cookie (auth_token) or Authorization Bearer header
  */
 const protect = asyncHandler(async (req, res, next) => {
-  const token = req.headers?.authorization?.split(" ")[1];
+  const token = getToken(req);
 
   if (!token) {
     const err = new Error("Access denied. No token provided.");

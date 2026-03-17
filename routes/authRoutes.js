@@ -5,6 +5,7 @@ const {
   registerAdmin,
   registerMaster,
   login,
+  logout,
   getMe,
   updateProfile,
 } = require("../controllers/authController");
@@ -25,6 +26,7 @@ router.post("/users/register", registerUser);
 router.post("/admin/register", registerAdmin);
 router.post("/masters/register", registerMaster);
 router.post("/login", login);
+router.post("/logout", logout);
 
 router.get("/me", protect, getMe);
 router.get("/profile", protect, getMe);

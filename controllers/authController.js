@@ -5,6 +5,7 @@ const Rating = require("../models/Rating");
 const slugify = require("../utils/slugify");
 const asyncHandler = require("express-async-handler");
 const generateToken = require("../utils/generateToken");
+const { setAuthCookie, clearAuthCookie } = require("../utils/setAuthCookie");
 const { hashPassword, isPasswordMatched } = require("../utils/helpers");
 
 // @desc    Register user (normal client)
@@ -38,6 +39,7 @@ const registerUser = asyncHandler(async (req, res) => {
   });
 
   const token = generateToken(user._id, "user");
+  setAuthCookie(res, token);
 
   res.status(201).json({
     success: true,
@@ -93,6 +95,7 @@ const registerAdmin = asyncHandler(async (req, res) => {
   });
 
   const token = generateToken(admin._id, "admin");
+  setAuthCookie(res, token);
 
   res.status(201).json({
     success: true,
@@ -142,6 +145,7 @@ const registerMaster = asyncHandler(async (req, res) => {
   });
 
   const token = generateToken(master._id, "master");
+  setAuthCookie(res, token);
 
   res.status(201).json({
     success: true,
@@ -185,6 +189,7 @@ const login = asyncHandler(async (req, res) => {
       throw err;
     }
     const token = generateToken(user._id, "user");
+    setAuthCookie(res, token);
     return res.json({
       success: true,
       data: {
@@ -215,6 +220,7 @@ const login = asyncHandler(async (req, res) => {
       throw err;
     }
     const token = generateToken(master._id, "master");
+    setAuthCookie(res, token);
     return res.json({
       success: true,
       data: {
@@ -244,6 +250,7 @@ const login = asyncHandler(async (req, res) => {
       throw err;
     }
     const token = generateToken(admin._id, "admin");
+    setAuthCookie(res, token);
     return res.json({
       success: true,
       data: {
@@ -411,11 +418,20 @@ const getMe = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Logout - clear auth cookie
+// @route   POST /api/auth/logout
+// @access  Public
+const logout = asyncHandler(async (req, res) => {
+  clearAuthCookie(res);
+  res.status(204).end();
+});
+
 module.exports = {
   registerUser,
   registerAdmin,
   registerMaster,
   login,
+  logout,
   getMe,
   updateProfile,
 };

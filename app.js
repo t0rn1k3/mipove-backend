@@ -1,6 +1,7 @@
 const express = require("express");
 const path = require("path");
 const cors = require("cors");
+const cookieParser = require("cookie-parser");
 const masterRoutes = require("./routes/masterRoutes");
 const authRoutes = require("./routes/authRoutes");
 const adminRoutes = require("./routes/adminRoutes");
@@ -11,7 +12,7 @@ const {
 
 const app = express();
 
-// CORS: allow frontend origin from env (like school-system)
+// CORS: allow frontend origin (must be specific for credentials)
 const frontendOrigin = process.env.FRONTEND_URL || "http://localhost:3000";
 app.use(
   cors({
@@ -20,6 +21,7 @@ app.use(
   }),
 );
 
+app.use(cookieParser());
 app.use(
   express.json({
     type: (req) => {
