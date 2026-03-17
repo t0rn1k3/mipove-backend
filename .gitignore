@@ -1,0 +1,45 @@
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Runtime / uploads
+uploads/
+tmp/
+temp/
+
+# Logs
+logs/
+*.log
+
+# Build output / coverage
+dist/
+build/
+coverage/
+.nyc_output/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+
+# Secrets / keys / certs
+*.pem
+*.key
+*.pfx
+*.p12
+*.crt
+*.cer
+*.der
+secrets/
+
