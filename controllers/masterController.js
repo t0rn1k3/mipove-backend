@@ -79,7 +79,7 @@ const getMasterBySlug = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Create master (admin only - masters register via /auth/register/master)
+// @desc    Create master (admin only - masters register via /auth/masters/register)
 // @route   POST /api/masters
 // @access  Private (admin)
 const createMaster = asyncHandler(async (req, res) => {

@@ -21,9 +21,9 @@ const handleUpload = (req, res, next) => {
   });
 };
 
-router.post("/register/user", registerUser);
-router.post("/register/admin", registerAdmin);
-router.post("/register/master", registerMaster);
+router.post("/users/register", registerUser);
+router.post("/admin/register", registerAdmin);
+router.post("/masters/register", registerMaster);
 router.post("/login", login);
 
 router.get("/me", protect, getMe);

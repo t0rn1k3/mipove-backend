@@ -6,7 +6,7 @@ const generateToken = require("../utils/generateToken");
 const { hashPassword, isPasswordMatched } = require("../utils/helpers");
 
 // @desc    Register user (normal client)
-// @route   POST /api/auth/register/user
+// @route   POST /api/auth/users/register
 // @access  Public
 const registerUser = asyncHandler(async (req, res) => {
   const { name, email, phone, password } = req.body;
@@ -52,7 +52,7 @@ const registerUser = asyncHandler(async (req, res) => {
 });
 
 // @desc    Register admin
-// @route   POST /api/auth/register/admin
+// @route   POST /api/auth/admin/register
 // @access  Public (requires ADMIN_SECRET in body if set in env)
 const registerAdmin = asyncHandler(async (req, res) => {
   const body = req.body || {};
@@ -105,7 +105,7 @@ const registerAdmin = asyncHandler(async (req, res) => {
 });
 
 // @desc    Register master (professional) - creates in masters collection
-// @route   POST /api/auth/register/master
+// @route   POST /api/auth/masters/register
 // @access  Public
 const registerMaster = asyncHandler(async (req, res) => {
   const { name, email, phone, password } = req.body;

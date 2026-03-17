@@ -20,7 +20,7 @@
 - [x] **Rating** – raterId, raterType (User|Master), master, stars (1–5). Users and masters can rate.
 
 #### Auth
-- [x] Register: `POST /api/auth/register/user`, `/register/master`, `/register/admin` (admin protected by `ADMIN_SECRET`)
+- [x] Register: `POST /api/auth/users/register`, `/auth/masters/register`, `/auth/admin/register` (admin protected by `ADMIN_SECRET`)
 - [x] Login: `POST /api/auth/login` – single endpoint for all roles
 - [x] Profile: `GET/PUT/POST /api/auth/profile` – update profile + image upload
 - [x] `GET /api/auth/me` – current user
@@ -43,7 +43,7 @@
 #### Admin API
 - [x] Role `admin`, `authorize("admin")` on admin routes
 - [x] Endpoints: stats, growth, users, active/blocked/new, masters, block/unblock, create master
-- [x] `POST /api/auth/register/admin` – hidden, no UI; protected by `ADMIN_SECRET`
+- [x] `POST /api/auth/admin/register` – hidden, no UI; protected by `ADMIN_SECRET`
 - [x] `scripts/create-admin.js` – `npm run create-admin` for first admin
 
 #### Profile image upload
