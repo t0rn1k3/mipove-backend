@@ -1,5 +1,5 @@
 const User = require("../models/User");
-const Artisan = require("../models/Artisan");
+const Master = require("../models/Master");
 const slugify = require("../utils/slugify");
 const asyncHandler = require("express-async-handler");
 const generateToken = require("../utils/generateToken");
@@ -35,7 +35,7 @@ const registerUser = asyncHandler(async (req, res) => {
     role: "user",
   });
 
-  const token = generateToken(user._id);
+  const token = generateToken(user._id, "user");
 
   res.status(201).json({
     success: true,
@@ -46,7 +46,6 @@ const registerUser = asyncHandler(async (req, res) => {
       phone: user.phone,
       role: user.role,
       image: user.image || "",
-      password: hashedPassword,
     },
     token,
   });
@@ -89,7 +88,7 @@ const registerAdmin = asyncHandler(async (req, res) => {
     role: "admin",
   });
 
-  const token = generateToken(user._id);
+  const token = generateToken(user._id, "user");
 
   res.status(201).json({
     success: true,
@@ -105,11 +104,12 @@ const registerAdmin = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Register master (artisan/professional)
+// @desc    Register master (professional) - creates in masters collection
 // @route   POST /api/auth/register/master
 // @access  Public
 const registerMaster = asyncHandler(async (req, res) => {
   const { name, email, phone, password } = req.body;
+  const emailNorm = email.toLowerCase().trim();
 
   if (!name || !email || !password) {
     const err = new Error("Please provide name, email, and password");
@@ -117,55 +117,49 @@ const registerMaster = asyncHandler(async (req, res) => {
     throw err;
   }
 
-  const existingUser = await User.findOne({
-    email: email.toLowerCase().trim(),
-  });
-  if (existingUser) {
-    const err = new Error("User already exists with this email");
+  const [existingUser, existingMaster] = await Promise.all([
+    User.findOne({ email: emailNorm }),
+    Master.findOne({ email: emailNorm }),
+  ]);
+  if (existingUser || existingMaster) {
+    const err = new Error("Account already exists with this email");
     err.statusCode = 409;
     throw err;
   }
 
   const hashedPassword = await hashPassword(password);
-  const user = await User.create({
+  const slug = slugify(name) + "-" + Date.now().toString(36).slice(-6);
+  const master = await Master.create({
     name,
-    email: email.toLowerCase().trim(),
+    email: emailNorm,
     phone: phone || "",
     password: hashedPassword,
-    role: "master",
-  });
-
-  const slug =
-    slugify(name) + "-" + user._id.toString().slice(-6);
-  await Artisan.create({
-    user: user._id,
-    name,
-    email: email.toLowerCase().trim(),
-    phone: phone || "",
     slug,
   });
 
-  const token = generateToken(user._id);
+  const token = generateToken(master._id, "master");
 
   res.status(201).json({
     success: true,
     data: {
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      phone: user.phone,
-      role: user.role,
-      image: user.image || "",
+      _id: master._id,
+      name: master.name,
+      email: master.email,
+      phone: master.phone || "",
+      role: "master",
+      image: master.image || "",
+      slug: master.slug,
     },
     token,
   });
 });
 
-// @desc    Login user or master
+// @desc    Login - checks users (clients, admins) and masters
 // @route   POST /api/auth/login
 // @access  Public
 const login = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
+  const emailNorm = email.toLowerCase().trim();
 
   if (!email || !password) {
     const err = new Error("Please provide email and password");
@@ -173,39 +167,64 @@ const login = asyncHandler(async (req, res) => {
     throw err;
   }
 
-  const user = await User.findOne({ email: email.toLowerCase().trim() }).select(
+  let user = await User.findOne({ email: emailNorm }).select("+password");
+  if (user) {
+    if (user.isBlocked) {
+      const err = new Error("Account is blocked. Contact support.");
+      err.statusCode = 403;
+      throw err;
+    }
+    const isMatch = await isPasswordMatched(password, user.password);
+    if (!isMatch) {
+      const err = new Error("Invalid login credentials");
+      err.statusCode = 401;
+      throw err;
+    }
+    const token = generateToken(user._id, "user");
+    return res.json({
+      success: true,
+      data: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone || "",
+        role: user.role,
+        image: user.image || "",
+      },
+      token,
+    });
+  }
+
+  const master = await Master.findOne({ email: emailNorm }).select(
     "+password",
   );
-  if (!user) {
+  if (!master) {
     const err = new Error("Invalid login credentials");
     err.statusCode = 401;
     throw err;
   }
-
-  if (user.isBlocked) {
+  if (master.isBlocked) {
     const err = new Error("Account is blocked. Contact support.");
     err.statusCode = 403;
     throw err;
   }
-
-  const isMatch = await isPasswordMatched(password, user.password);
+  const isMatch = await isPasswordMatched(password, master.password);
   if (!isMatch) {
     const err = new Error("Invalid login credentials");
     err.statusCode = 401;
     throw err;
   }
-
-  const token = generateToken(user._id);
-
-  res.json({
+  const token = generateToken(master._id, "master");
+  return res.json({
     success: true,
     data: {
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      phone: user.phone,
-      role: user.role,
-      image: user.image || "",
+      _id: master._id,
+      name: master.name,
+      email: master.email,
+      phone: master.phone || "",
+      role: "master",
+      image: master.image || "",
+      slug: master.slug,
     },
     token,
   });
@@ -213,27 +232,40 @@ const login = asyncHandler(async (req, res) => {
 
 // @desc    Update profile (name, phone, email, password, image)
 // @route   PUT /api/auth/profile
-// @access  Private
+// @access  Private (works for both users and masters)
 const updateProfile = asyncHandler(async (req, res) => {
   const { name, phone, email, password } = req.body;
-  const userId = req.user._id;
+  const accountId = req.user._id;
+  const isMaster = req.user.role === "master";
 
   const updateData = {};
-
   if (name) updateData.name = name.trim();
   if (phone !== undefined) updateData.phone = phone.trim();
 
   if (email) {
-    const existing = await User.findOne({
-      email: email.toLowerCase().trim(),
-      _id: { $ne: userId },
-    });
-    if (existing) {
-      const err = new Error("Email already in use by another account");
-      err.statusCode = 409;
-      throw err;
+    const emailNorm = email.toLowerCase().trim();
+    if (isMaster) {
+      const existing = await Master.findOne({
+        email: emailNorm,
+        _id: { $ne: accountId },
+      });
+      if (existing) {
+        const err = new Error("Email already in use by another account");
+        err.statusCode = 409;
+        throw err;
+      }
+    } else {
+      const existing = await User.findOne({
+        email: emailNorm,
+        _id: { $ne: accountId },
+      });
+      if (existing) {
+        const err = new Error("Email already in use by another account");
+        err.statusCode = 409;
+        throw err;
+      }
     }
-    updateData.email = email.toLowerCase().trim();
+    updateData.email = emailNorm;
   }
 
   if (password) {
@@ -246,34 +278,51 @@ const updateProfile = asyncHandler(async (req, res) => {
   }
 
   if (Object.keys(updateData).length === 0) {
-    const user = await User.findById(userId).select("-password");
+    const doc = isMaster
+      ? await Master.findById(accountId).select("-password")
+      : await User.findById(accountId).select("-password");
+    const data = doc.toObject ? doc.toObject() : doc;
+    if (isMaster) data.role = "master";
     return res.json({
       success: true,
-      data: user,
+      data,
       message: "No fields to update",
     });
   }
 
-  const user = await User.findByIdAndUpdate(userId, updateData, {
-    new: true,
-    runValidators: true,
-  }).select("-password");
+  const doc = isMaster
+    ? await Master.findByIdAndUpdate(accountId, updateData, {
+        new: true,
+        runValidators: true,
+      }).select("-password")
+    : await User.findByIdAndUpdate(accountId, updateData, {
+        new: true,
+        runValidators: true,
+      }).select("-password");
+
+  const data = doc.toObject ? doc.toObject() : doc;
+  if (isMaster) data.role = "master";
 
   res.json({
     success: true,
-    data: user,
+    data,
     message: "Profile updated successfully",
   });
 });
 
-// @desc    Get current logged-in user
+// @desc    Get current logged-in user or master
 // @route   GET /api/auth/me
 // @access  Private
 const getMe = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user._id).select("-password");
+  const isMaster = req.user.role === "master";
+  const doc = isMaster
+    ? await Master.findById(req.user._id).select("-password")
+    : await User.findById(req.user._id).select("-password");
+  const data = doc.toObject ? doc.toObject() : doc;
+  if (isMaster) data.role = "master";
   res.json({
     success: true,
-    data: user,
+    data,
   });
 });
 

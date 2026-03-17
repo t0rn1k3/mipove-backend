@@ -2,14 +2,19 @@ const mongoose = require("mongoose");
 
 const ratingSchema = new mongoose.Schema(
   {
-    user: {
+    raterId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
       required: true,
+      refPath: "raterType",
     },
-    artisan: {
+    raterType: {
+      type: String,
+      required: true,
+      enum: ["User", "Master"],
+    },
+    master: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Artisan",
+      ref: "Master",
       required: true,
     },
     stars: {
@@ -22,6 +27,6 @@ const ratingSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-ratingSchema.index({ user: 1, artisan: 1 }, { unique: true });
+ratingSchema.index({ raterId: 1, master: 1 }, { unique: true });
 
 module.exports = mongoose.model("Rating", ratingSchema);

@@ -1,14 +1,15 @@
 const Rating = require("../models/Rating");
-const Artisan = require("../models/Artisan");
+const Master = require("../models/Master");
 const asyncHandler = require("express-async-handler");
 
-// @desc    Set or update star rating for a master (artisan)
-// @route   POST /api/artisans/:slug/rate
-// @access  Private (user only)
+// @desc    Set or update star rating for a master
+// @route   POST /api/masters/:slug/rate
+// @access  Private (user or master)
 const setRating = asyncHandler(async (req, res) => {
   const { slug } = req.params;
   const { stars } = req.body;
-  const userId = req.user._id;
+  const raterId = req.user._id;
+  const raterType = req.user.role === "master" ? "Master" : "User";
 
   if (!stars || stars < 1 || stars > 5) {
     const err = new Error("Stars must be between 1 and 5");
@@ -16,18 +17,28 @@ const setRating = asyncHandler(async (req, res) => {
     throw err;
   }
 
-  const artisan = await Artisan.findOne({ slug });
-  if (!artisan) {
-    const err = new Error("Artisan not found");
+  const master = await Master.findOne({ slug });
+  if (!master) {
+    const err = new Error("Master not found");
     err.statusCode = 404;
     throw err;
   }
 
+  // Masters cannot rate their own profile
+  if (
+    req.user.role === "master" &&
+    master._id.toString() === raterId.toString()
+  ) {
+    const err = new Error("You cannot rate your own profile");
+    err.statusCode = 403;
+    throw err;
+  }
+
   const rating = await Rating.findOneAndUpdate(
-    { user: userId, artisan: artisan._id },
+    { raterId, raterType, master: master._id },
     { stars },
     { new: true, upsert: true }
-  ).populate("artisan", "name slug");
+  ).populate("master", "name slug");
 
   res.json({
     success: true,
@@ -36,23 +47,25 @@ const setRating = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Get current user's rating for an artisan
-// @route   GET /api/artisans/:slug/rate/me
+// @desc    Get current user's rating for a master
+// @route   GET /api/masters/:slug/rate/me
 // @access  Private
 const getMyRating = asyncHandler(async (req, res) => {
   const { slug } = req.params;
-  const userId = req.user._id;
+  const raterId = req.user._id;
+  const raterType = req.user.role === "master" ? "Master" : "User";
 
-  const artisan = await Artisan.findOne({ slug });
-  if (!artisan) {
-    const err = new Error("Artisan not found");
+  const master = await Master.findOne({ slug });
+  if (!master) {
+    const err = new Error("Master not found");
     err.statusCode = 404;
     throw err;
   }
 
   const rating = await Rating.findOne({
-    user: userId,
-    artisan: artisan._id,
+    raterId,
+    raterType,
+    master: master._id,
   });
 
   res.json({
@@ -61,21 +74,21 @@ const getMyRating = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Get average rating and count for an artisan
-// @route   GET /api/artisans/:slug/ratings
+// @desc    Get average rating and count for a master
+// @route   GET /api/masters/:slug/ratings
 // @access  Public
-const getArtisanRatings = asyncHandler(async (req, res) => {
+const getMasterRatings = asyncHandler(async (req, res) => {
   const { slug } = req.params;
 
-  const artisan = await Artisan.findOne({ slug });
-  if (!artisan) {
-    const err = new Error("Artisan not found");
+  const master = await Master.findOne({ slug });
+  if (!master) {
+    const err = new Error("Master not found");
     err.statusCode = 404;
     throw err;
   }
 
   const stats = await Rating.aggregate([
-    { $match: { artisan: artisan._id } },
+    { $match: { master: master._id } },
     {
       $group: {
         _id: null,
@@ -101,5 +114,5 @@ const getArtisanRatings = asyncHandler(async (req, res) => {
 module.exports = {
   setRating,
   getMyRating,
-  getArtisanRatings,
+  getMasterRatings,
 };

@@ -1,5 +1,5 @@
 const User = require("../models/User");
-const Artisan = require("../models/Artisan");
+const Master = require("../models/Master");
 const slugify = require("../utils/slugify");
 const asyncHandler = require("express-async-handler");
 const { hashPassword } = require("../utils/helpers");
@@ -20,11 +20,11 @@ const getAllUsers = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Get all masters
+// @desc    Get all masters (from masters collection)
 // @route   GET /api/admin/masters
 // @access  Private (admin)
 const getAllMasters = asyncHandler(async (req, res) => {
-  const masters = await User.find({ role: "master" })
+  const masters = await Master.find()
     .select("-password")
     .sort({ createdAt: -1 })
     .lean();
@@ -119,11 +119,12 @@ const getGrowthRate = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Create new master (by admin)
+// @desc    Create new master (by admin) - creates in masters collection
 // @route   POST /api/admin/masters
 // @access  Private (admin)
 const createMaster = asyncHandler(async (req, res) => {
   const { name, email, phone, password } = req.body;
+  const emailNorm = email.toLowerCase().trim();
 
   if (!name || !email || !password) {
     const err = new Error("Please provide name, email, and password");
@@ -131,45 +132,37 @@ const createMaster = asyncHandler(async (req, res) => {
     throw err;
   }
 
-  const existingUser = await User.findOne({
-    email: email.toLowerCase().trim(),
-  });
-  if (existingUser) {
-    const err = new Error("User with this email already exists");
+  const [existingUser, existingMaster] = await Promise.all([
+    User.findOne({ email: emailNorm }),
+    Master.findOne({ email: emailNorm }),
+  ]);
+  if (existingUser || existingMaster) {
+    const err = new Error("Account with this email already exists");
     err.statusCode = 409;
     throw err;
   }
 
   const hashedPassword = await hashPassword(password);
-  const user = await User.create({
+  const slug = slugify(name) + "-" + Date.now().toString(36).slice(-6);
+  const master = await Master.create({
     name,
-    email: email.toLowerCase().trim(),
+    email: emailNorm,
     phone: phone || "",
     password: hashedPassword,
-    role: "master",
-  });
-
-  const slug =
-    slugify(name) + "-" + user._id.toString().slice(-6);
-  await Artisan.create({
-    user: user._id,
-    name,
-    email: email.toLowerCase().trim(),
-    phone: phone || "",
     slug,
   });
 
-  const data = user.toObject();
+  const data = master.toObject();
   delete data.password;
 
   res.status(201).json({
     success: true,
-    data,
+    data: { ...data, role: "master" },
     message: "Master created successfully",
   });
 });
 
-// @desc    Get single user (user or master) by ID
+// @desc    Get single user by ID (users collection only)
 // @route   GET /api/admin/users/:id
 // @access  Private (admin)
 const getUser = asyncHandler(async (req, res) => {
@@ -186,6 +179,26 @@ const getUser = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     data: user,
+  });
+});
+
+// @desc    Get single master by ID
+// @route   GET /api/admin/masters/:id
+// @access  Private (admin)
+const getMaster = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  const master = await Master.findById(id).select("-password").lean();
+
+  if (!master) {
+    const err = new Error("Master not found");
+    err.statusCode = 404;
+    throw err;
+  }
+
+  res.json({
+    success: true,
+    data: { ...master, role: "master" },
   });
 });
 
@@ -241,6 +254,62 @@ const unblockUser = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Block master
+// @route   PUT /api/admin/masters/:id/block
+// @access  Private (admin)
+const blockMaster = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const body = req.body || {};
+  const { blocked } = body;
+
+  const master = await Master.findByIdAndUpdate(
+    id,
+    { isBlocked: blocked !== false },
+    { new: true }
+  ).select("-password");
+
+  if (!master) {
+    const err = new Error("Master not found");
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const data = master.toObject ? master.toObject() : master;
+  data.role = "master";
+  res.json({
+    success: true,
+    data,
+    message: master.isBlocked ? "Master blocked" : "Master unblocked",
+  });
+});
+
+// @desc    Unblock master
+// @route   PUT /api/admin/masters/:id/unblock
+// @access  Private (admin)
+const unblockMaster = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  const master = await Master.findByIdAndUpdate(
+    id,
+    { isBlocked: false },
+    { new: true }
+  ).select("-password");
+
+  if (!master) {
+    const err = new Error("Master not found");
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const data = master.toObject ? master.toObject() : master;
+  data.role = "master";
+  res.json({
+    success: true,
+    data,
+    message: "Master unblocked",
+  });
+});
+
 // @desc    Get dashboard stats summary
 // @route   GET /api/admin/stats
 // @access  Private (admin)
@@ -248,7 +317,7 @@ const getDashboardStats = asyncHandler(async (req, res) => {
   const [totalUsers, totalMasters, activeUsers, blockedUsers, newUsers] =
     await Promise.all([
       User.countDocuments(),
-      User.countDocuments({ role: "master" }),
+      Master.countDocuments(),
       User.countDocuments({ isBlocked: false }),
       User.countDocuments({ isBlocked: true }),
       User.countDocuments({
@@ -296,6 +365,7 @@ const getDashboardStats = asyncHandler(async (req, res) => {
 module.exports = {
   getAllUsers,
   getUser,
+  getMaster,
   getAllMasters,
   getActiveUsers,
   getBlockedUsers,
@@ -304,5 +374,7 @@ module.exports = {
   createMaster,
   blockUser,
   unblockUser,
+  blockMaster,
+  unblockMaster,
   getDashboardStats,
 };

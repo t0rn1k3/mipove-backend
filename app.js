@@ -1,7 +1,7 @@
 const express = require("express");
 const path = require("path");
 const cors = require("cors");
-const artisanRoutes = require("./routes/artisanRoutes");
+const masterRoutes = require("./routes/masterRoutes");
 const authRoutes = require("./routes/authRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const {
@@ -37,7 +37,7 @@ app.get("/api/health", (req, res) => {
 });
 
 app.use("/api/auth", authRoutes);
-app.use("/api/artisans", artisanRoutes);
+app.use("/api/masters", masterRoutes);
 app.use("/api/admin", adminRoutes);
 
 // 404 - must be after all routes (like school-system)

@@ -1,0 +1,43 @@
+const mongoose = require("mongoose");
+const slugify = require("../utils/slugify");
+
+const workSchema = new mongoose.Schema({
+  title: { type: String, required: true },
+  description: { type: String, required: true },
+  price: { type: Number, required: true },
+  image: String,
+});
+
+const masterSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      lowercase: true,
+      trim: true,
+    },
+    password: { type: String, required: true, minlength: 6, select: false },
+    phone: String,
+    isBlocked: { type: Boolean, default: false },
+    lastActiveAt: { type: Date, default: null },
+    specialty: String,
+    location: String,
+    bio: String,
+    instagram: String,
+    website: String,
+    image: String,
+    slug: { type: String, unique: true },
+    works: [workSchema],
+  },
+  { timestamps: true, collection: "masters" }
+);
+
+masterSchema.pre("save", async function () {
+  if (this.isModified("name") && !this.slug) {
+    this.slug = slugify(this.name);
+  }
+});
+
+module.exports = mongoose.model("Master", masterSchema);

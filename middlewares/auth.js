@@ -1,9 +1,11 @@
 const User = require("../models/User");
+const Master = require("../models/Master");
 const asyncHandler = require("express-async-handler");
 const verifyToken = require("../utils/verifyToken");
 
 /**
- * Protect routes - verify JWT and attach user to req (like school-system isLogin)
+ * Protect routes - verify JWT and attach user/master to req
+ * Users (clients, admins) from users collection; masters from masters collection
  */
 const protect = asyncHandler(async (req, res, next) => {
   const token = req.headers?.authorization?.split(" ")[1];
@@ -21,14 +23,38 @@ const protect = asyncHandler(async (req, res, next) => {
     throw err;
   }
 
-  const user = await User.findById(decoded.id).select("-password");
-  if (!user) {
-    const err = new Error("Access denied. User not found.");
-    err.statusCode = 401;
-    throw err;
+  if (decoded.type === "master") {
+    const master = await Master.findById(decoded.id).select("-password");
+    if (!master) {
+      const err = new Error("Access denied. Master not found.");
+      err.statusCode = 401;
+      throw err;
+    }
+    if (master.isBlocked) {
+      const err = new Error("Account is blocked. Contact support.");
+      err.statusCode = 403;
+      throw err;
+    }
+    req.user = master.toObject();
+    req.user._id = master._id;
+    req.user.role = "master";
+  } else {
+    const user = await User.findById(decoded.id).select("-password");
+    if (!user) {
+      const err = new Error("Access denied. User not found.");
+      err.statusCode = 401;
+      throw err;
+    }
+    if (user.isBlocked) {
+      const err = new Error("Account is blocked. Contact support.");
+      err.statusCode = 403;
+      throw err;
+    }
+    req.user = user.toObject ? user.toObject() : user;
+    req.user._id = user._id;
+    req.user.role = user.role;
   }
 
-  req.user = user;
   next();
 });
 
