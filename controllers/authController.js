@@ -1,6 +1,7 @@
 const User = require("../models/User");
 const Master = require("../models/Master");
 const Admin = require("../models/Admin");
+const Rating = require("../models/Rating");
 const slugify = require("../utils/slugify");
 const asyncHandler = require("express-async-handler");
 const generateToken = require("../utils/generateToken");
@@ -329,6 +330,9 @@ const updateProfile = asyncHandler(async (req, res) => {
     const data = doc.toObject ? doc.toObject() : doc;
     if (isMaster) data.role = "master";
     if (isAdmin) data.role = "admin";
+    if (req.user.role === "user") {
+      data.ratedMasters = await getRatedMastersForUser(accountId);
+    }
     return res.json({
       success: true,
       data,
@@ -354,6 +358,9 @@ const updateProfile = asyncHandler(async (req, res) => {
   const data = doc.toObject ? doc.toObject() : doc;
   if (isMaster) data.role = "master";
   if (isAdmin) data.role = "admin";
+  if (req.user.role === "user") {
+    data.ratedMasters = await getRatedMastersForUser(accountId);
+  }
 
   res.json({
     success: true,
@@ -362,9 +369,28 @@ const updateProfile = asyncHandler(async (req, res) => {
   });
 });
 
+// Helper: fetch rated masters for a user (clients only)
+const getRatedMastersForUser = async (userId) => {
+  const ratings = await Rating.find({
+    raterId: userId,
+    raterType: "User",
+  })
+    .populate("master", "name slug image specialty location")
+    .sort({ updatedAt: -1 })
+    .lean();
+  return ratings
+    .filter((r) => r.master)
+    .map((r) => ({
+      master: r.master,
+      stars: r.stars,
+      ratedAt: r.updatedAt,
+    }));
+};
+
 // @desc    Get current logged-in user, master, or admin
 // @route   GET /api/auth/me
 // @access  Private
+// For users: includes ratedMasters (masters they rated) instead of picture gallery
 const getMe = asyncHandler(async (req, res) => {
   const isMaster = req.user.role === "master";
   const isAdmin = req.user.role === "admin";
@@ -376,6 +402,9 @@ const getMe = asyncHandler(async (req, res) => {
   const data = doc.toObject ? doc.toObject() : doc;
   if (isMaster) data.role = "master";
   if (isAdmin) data.role = "admin";
+  if (req.user.role === "user") {
+    data.ratedMasters = await getRatedMastersForUser(req.user._id);
+  }
   res.json({
     success: true,
     data,
