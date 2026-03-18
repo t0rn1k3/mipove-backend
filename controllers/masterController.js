@@ -2,6 +2,8 @@ const Master = require("../models/Master");
 const Rating = require("../models/Rating");
 const asyncHandler = require("express-async-handler");
 
+const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 // @desc    Get my portfolio images
 // @route   GET /api/masters/me/portfolio
 // @access  Private (master)
@@ -72,9 +74,9 @@ const addPortfolioImages = asyncHandler(async (req, res) => {
 // @desc    Get all masters (public list, non-blocked only)
 // @route   GET /api/masters
 // @access  Public
-// Query: specialty (filter), search (name or specialty)
+// Query: specialty, search (name or specialty), location (city/country)
 const getMasters = asyncHandler(async (req, res) => {
-  const { specialty, search } = req.query;
+  const { specialty, search, location } = req.query;
   const filter = { isBlocked: false };
 
   if (specialty && String(specialty).trim()) {
@@ -86,6 +88,9 @@ const getMasters = asyncHandler(async (req, res) => {
       { name: term },
       { specialty: term },
     ];
+  }
+  if (location && String(location).trim()) {
+    filter.location = new RegExp(escapeRegex(String(location).trim()), "i");
   }
 
   const masters = await Master.find(filter)
