@@ -9,7 +9,11 @@ const { COOKIE_NAME } = require("../utils/setAuthCookie");
  * Extract token: cookie first, then Authorization Bearer header
  */
 const getToken = (req) => {
-  return req.cookies?.[COOKIE_NAME] || req.headers?.authorization?.split(" ")[1];
+  const fromCookie = req.cookies?.[COOKIE_NAME];
+  if (fromCookie) return fromCookie;
+  const authHeader = req.headers?.authorization || "";
+  if (!authHeader.startsWith("Bearer ")) return null;
+  return authHeader.split(" ")[1] || null;
 };
 
 /**
@@ -25,7 +29,7 @@ const protect = asyncHandler(async (req, res, next) => {
     throw err;
   }
 
-  const decoded = verifyToken(token);
+  const decoded = verifyToken(token, { tokenType: "access" });
   if (!decoded) {
     const err = new Error("Access denied. Invalid token.");
     err.statusCode = 401;

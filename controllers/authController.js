@@ -5,8 +5,22 @@ const Rating = require("../models/Rating");
 const slugify = require("../utils/slugify");
 const asyncHandler = require("express-async-handler");
 const generateToken = require("../utils/generateToken");
-const { setAuthCookie, clearAuthCookie } = require("../utils/setAuthCookie");
+const verifyToken = require("../utils/verifyToken");
+const {
+  setAuthCookie,
+  setRefreshCookie,
+  clearAuthCookie,
+  clearRefreshCookie,
+  REFRESH_COOKIE_NAME,
+} = require("../utils/setAuthCookie");
 const { hashPassword, isPasswordMatched } = require("../utils/helpers");
+
+const issueAuthCookies = (res, id, role) => {
+  const accessToken = generateToken(id, role, { tokenType: "access" });
+  const refreshToken = generateToken(id, role, { tokenType: "refresh" });
+  setAuthCookie(res, accessToken);
+  setRefreshCookie(res, refreshToken);
+};
 
 // @desc    Register user (normal client)
 // @route   POST /api/auth/users/register
@@ -38,8 +52,7 @@ const registerUser = asyncHandler(async (req, res) => {
     role: "user",
   });
 
-  const token = generateToken(user._id, "user");
-  setAuthCookie(res, token);
+  issueAuthCookies(res, user._id, "user");
 
   res.status(201).json({
     success: true,
@@ -94,8 +107,7 @@ const registerAdmin = asyncHandler(async (req, res) => {
     password: hashedPassword,
   });
 
-  const token = generateToken(admin._id, "admin");
-  setAuthCookie(res, token);
+  issueAuthCookies(res, admin._id, "admin");
 
   res.status(201).json({
     success: true,
@@ -144,8 +156,7 @@ const registerMaster = asyncHandler(async (req, res) => {
     slug,
   });
 
-  const token = generateToken(master._id, "master");
-  setAuthCookie(res, token);
+  issueAuthCookies(res, master._id, "master");
 
   res.status(201).json({
     success: true,
@@ -188,8 +199,7 @@ const login = asyncHandler(async (req, res) => {
       err.statusCode = 401;
       throw err;
     }
-    const token = generateToken(user._id, "user");
-    setAuthCookie(res, token);
+    issueAuthCookies(res, user._id, "user");
     return res.json({
       success: true,
       data: {
@@ -219,8 +229,7 @@ const login = asyncHandler(async (req, res) => {
       err.statusCode = 401;
       throw err;
     }
-    const token = generateToken(master._id, "master");
-    setAuthCookie(res, token);
+    issueAuthCookies(res, master._id, "master");
     return res.json({
       success: true,
       data: {
@@ -249,8 +258,7 @@ const login = asyncHandler(async (req, res) => {
       err.statusCode = 401;
       throw err;
     }
-    const token = generateToken(admin._id, "admin");
-    setAuthCookie(res, token);
+    issueAuthCookies(res, admin._id, "admin");
     return res.json({
       success: true,
       data: {
@@ -268,6 +276,62 @@ const login = asyncHandler(async (req, res) => {
   const err = new Error("Invalid login credentials");
   err.statusCode = 401;
   throw err;
+});
+
+// @desc    Refresh access token (and optionally rotate refresh token)
+// @route   POST /api/auth/refresh
+// @access  Public (requires refresh_token cookie)
+const refresh = asyncHandler(async (req, res) => {
+  const refreshToken = req.cookies?.[REFRESH_COOKIE_NAME];
+  if (!refreshToken) {
+    const err = new Error("Refresh token missing");
+    err.statusCode = 401;
+    throw err;
+  }
+
+  const decoded = verifyToken(refreshToken, { tokenType: "refresh" });
+  if (!decoded) {
+    const err = new Error("Invalid or expired refresh token");
+    err.statusCode = 401;
+    throw err;
+  }
+
+  let account = null;
+  if (decoded.type === "master") {
+    account = await Master.findById(decoded.id).select("_id isBlocked");
+  } else if (decoded.type === "admin") {
+    account = await Admin.findById(decoded.id).select("_id isBlocked");
+  } else {
+    account = await User.findById(decoded.id).select("_id isBlocked");
+  }
+
+  if (!account) {
+    const err = new Error("Account not found");
+    err.statusCode = 401;
+    throw err;
+  }
+  if (account.isBlocked) {
+    const err = new Error("Account is blocked. Contact support.");
+    err.statusCode = 403;
+    throw err;
+  }
+
+  const role = decoded.type === "master" ? "master" : decoded.type === "admin" ? "admin" : "user";
+  const accessToken = generateToken(decoded.id, role, { tokenType: "access" });
+  setAuthCookie(res, accessToken);
+
+  // Rotate refresh token by default for better security.
+  const shouldRotate =
+    String(process.env.ROTATE_REFRESH_TOKEN || "true").toLowerCase() !== "false";
+  if (shouldRotate) {
+    const newRefreshToken = generateToken(decoded.id, role, { tokenType: "refresh" });
+    setRefreshCookie(res, newRefreshToken);
+  }
+
+  res.json({
+    success: true,
+    message: "Access token refreshed",
+  });
 });
 
 // @desc    Update profile (name, phone, email, password, image; masters: specialty, location, bio, instagram, website)
@@ -448,6 +512,7 @@ const getMe = asyncHandler(async (req, res) => {
 // @access  Public
 const logout = asyncHandler(async (req, res) => {
   clearAuthCookie(res);
+  clearRefreshCookie(res);
   res.status(204).end();
 });
 
@@ -456,6 +521,7 @@ module.exports = {
   registerAdmin,
   registerMaster,
   login,
+  refresh,
   logout,
   getMe,
   updateProfile,

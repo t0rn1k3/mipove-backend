@@ -5,6 +5,7 @@ const {
   registerAdmin,
   registerMaster,
   login,
+  refresh,
   logout,
   getMe,
   updateProfile,
@@ -26,6 +27,7 @@ router.post("/users/register", registerUser);
 router.post("/admin/register", registerAdmin);
 router.post("/masters/register", registerMaster);
 router.post("/login", login);
+router.post("/refresh", refresh);
 router.post("/logout", logout);
 
 router.get(["/me", "/me/"], protect, getMe);
