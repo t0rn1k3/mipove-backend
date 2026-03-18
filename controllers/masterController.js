@@ -143,6 +143,14 @@ const createMaster = asyncHandler(async (req, res) => {
 // @route   PUT /api/masters/:slug
 // @access  Private (master, own profile only)
 const updateMaster = asyncHandler(async (req, res) => {
+  if (req.body?.image !== undefined) {
+    const err = new Error(
+      "Profile image must be uploaded via /api/auth/me as multipart/form-data (field name: image).",
+    );
+    err.statusCode = 400;
+    throw err;
+  }
+
   const master = await Master.findOneAndUpdate(
     { slug: req.params.slug, _id: req.user._id },
     req.body,

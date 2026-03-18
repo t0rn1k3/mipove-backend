@@ -8,6 +8,16 @@ const MONGO_URL =
 
 const connectDB = async () => {
   try {
+    // On some Windows networks, Node's DNS (c-ares) may fail SRV lookups even when
+    // system tools succeed. If you're using mongodb+srv, allow forcing known-good DNS.
+    if (typeof MONGO_URL === "string" && MONGO_URL.startsWith("mongodb+srv://")) {
+      const forced = (process.env.DNS_SERVERS || "1.1.1.1,1.0.0.1")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (forced.length) dns.setServers(forced);
+    }
+
     const options = {
       serverSelectionTimeoutMS: 30000,
       socketTimeoutMS: 45000,

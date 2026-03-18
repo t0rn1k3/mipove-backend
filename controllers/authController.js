@@ -337,7 +337,11 @@ const updateProfile = asyncHandler(async (req, res) => {
   if (req.file && req.file.filename) {
     updateData.image = `/uploads/profiles/${req.file.filename}`;
   } else if (req.body?.image !== undefined) {
-    updateData.image = String(req.body.image || "").trim();
+    const err = new Error(
+      "Profile image must be uploaded as multipart/form-data (field name: image).",
+    );
+    err.statusCode = 400;
+    throw err;
   }
 
   // Master-specific fields
