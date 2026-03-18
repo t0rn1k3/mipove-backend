@@ -2,6 +2,24 @@ const Master = require("../models/Master");
 const Rating = require("../models/Rating");
 const asyncHandler = require("express-async-handler");
 
+// @desc    Get my portfolio images
+// @route   GET /api/masters/me/portfolio
+// @access  Private (master)
+const getMyPortfolio = asyncHandler(async (req, res) => {
+  const master = await Master.findById(req.user._id).select("portfolioImages");
+  if (!master) {
+    const err = new Error("Master not found");
+    err.statusCode = 404;
+    throw err;
+  }
+  res.json({
+    success: true,
+    data: {
+      portfolioImages: master.portfolioImages || [],
+    },
+  });
+});
+
 // @desc    Add portfolio images (append; max 30 total)
 // @route   POST /api/masters/me/portfolio
 // @access  Private (master)
@@ -245,5 +263,6 @@ module.exports = {
   createMaster,
   updateMaster,
   deleteMaster,
+  getMyPortfolio,
   addPortfolioImages,
 };

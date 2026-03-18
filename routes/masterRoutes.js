@@ -6,6 +6,7 @@ const {
   createMaster,
   updateMaster,
   deleteMaster,
+  getMyPortfolio,
   addPortfolioImages,
 } = require("../controllers/masterController");
 const {
@@ -29,13 +30,12 @@ const handlePortfolioUpload = (req, res, next) => {
 
 router.route("/").get(getMasters).post(protect, authorize("admin"), createMaster);
 
-router.post(
-  "/me/portfolio",
-  protect,
-  authorize("master"),
-  handlePortfolioUpload,
-  addPortfolioImages,
-);
+router
+  .route("/me/portfolio")
+  .get(protect, authorize("master"), getMyPortfolio)
+  // allow either POST or PATCH for appends
+  .post(protect, authorize("master"), handlePortfolioUpload, addPortfolioImages)
+  .patch(protect, authorize("master"), handlePortfolioUpload, addPortfolioImages);
 
 router.get("/:slug/ratings", getMasterRatings);
 router.get("/:slug/rate/me", protect, getMyRating);
