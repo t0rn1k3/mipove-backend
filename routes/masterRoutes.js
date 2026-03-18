@@ -6,6 +6,7 @@ const {
   createMaster,
   updateMaster,
   deleteMaster,
+  addPortfolioImages,
 } = require("../controllers/masterController");
 const {
   setRating,
@@ -13,8 +14,28 @@ const {
   getMasterRatings,
 } = require("../controllers/ratingController");
 const { protect, authorize } = require("../middlewares/auth");
+const portfolioUpload = require("../config/portfolioMulter");
+
+const handlePortfolioUpload = (req, res, next) => {
+  // field name: images (multiple)
+  portfolioUpload.array("images", 30)(req, res, (err) => {
+    if (err) {
+      err.statusCode = 400;
+      return next(err);
+    }
+    next();
+  });
+};
 
 router.route("/").get(getMasters).post(protect, authorize("admin"), createMaster);
+
+router.post(
+  "/me/portfolio",
+  protect,
+  authorize("master"),
+  handlePortfolioUpload,
+  addPortfolioImages,
+);
 
 router.get("/:slug/ratings", getMasterRatings);
 router.get("/:slug/rate/me", protect, getMyRating);

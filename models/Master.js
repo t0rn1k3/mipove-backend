@@ -28,6 +28,10 @@ const masterSchema = new mongoose.Schema(
     instagram: String,
     website: String,
     image: String,
+    portfolioImages: {
+      type: [String],
+      default: [],
+    },
     slug: { type: String, unique: true },
     works: [workSchema],
   },

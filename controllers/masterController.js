@@ -2,6 +2,55 @@ const Master = require("../models/Master");
 const Rating = require("../models/Rating");
 const asyncHandler = require("express-async-handler");
 
+// @desc    Add portfolio images (append; max 30 total)
+// @route   POST /api/masters/me/portfolio
+// @access  Private (master)
+const addPortfolioImages = asyncHandler(async (req, res) => {
+  const files = req.files || [];
+  if (!files.length) {
+    const err = new Error("Please upload at least one image (field name: images).");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const master = await Master.findById(req.user._id);
+  if (!master) {
+    const err = new Error("Master not found");
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const existing = Array.isArray(master.portfolioImages)
+    ? master.portfolioImages.length
+    : 0;
+  const incoming = files.length;
+  const maxTotal = 30;
+
+  if (existing + incoming > maxTotal) {
+    const err = new Error(
+      `Portfolio limit exceeded. You have ${existing} images and tried to add ${incoming}. Maximum is ${maxTotal}.`,
+    );
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const newPaths = files
+    .filter((f) => f && f.filename)
+    .map((f) => `/uploads/portfolio/${f.filename}`);
+
+  master.portfolioImages = [...(master.portfolioImages || []), ...newPaths];
+  await master.save();
+
+  const data = master.toObject();
+  delete data.password;
+
+  res.status(201).json({
+    success: true,
+    data,
+    message: "Portfolio images added successfully",
+  });
+});
+
 // @desc    Get all masters (public list, non-blocked only)
 // @route   GET /api/masters
 // @access  Public
@@ -196,4 +245,5 @@ module.exports = {
   createMaster,
   updateMaster,
   deleteMaster,
+  addPortfolioImages,
 };
