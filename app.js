@@ -5,7 +5,7 @@ const cookieParser = require("cookie-parser");
 const masterRoutes = require("./routes/masterRoutes");
 const authRoutes = require("./routes/authRoutes");
 const adminRoutes = require("./routes/adminRoutes");
-const geocodeRoutes = require("./routes/geocodeRoutes");
+const { searchCities } = require("./controllers/geocodeController");
 const {
   globalErrorHandler,
   pageNotFound,
@@ -42,7 +42,7 @@ app.get("/api/health", (req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/masters", masterRoutes);
 app.use("/api/admin", adminRoutes);
-app.use("/api/geocode", geocodeRoutes);
+app.get("/api/geocode/search", searchCities);
 
 // 404 - must be after all routes (like school-system)
 app.use(pageNotFound);
