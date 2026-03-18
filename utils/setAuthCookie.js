@@ -1,33 +1,42 @@
 const COOKIE_NAME = "auth_token";
-const MAX_AGE_MS = 15 * 60 * 1000; // 15 minutes (or use JWT_EXPIRE for consistency)
+const DEFAULT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days (604800 seconds)
 
 /**
  * Set HttpOnly auth cookie with JWT
+ * Uses COOKIE_MAX_AGE_SECONDS (seconds) or JWT_EXPIRE (e.g. 15m, 7d) or 7-day default.
  * @param {import('express').Response} res
  * @param {string} token - JWT string
  */
 const setAuthCookie = (res, token) => {
-  const maxAge = parseJwtExpiry(process.env.JWT_EXPIRE) || MAX_AGE_MS;
+  let maxAgeMs = null;
+  if (process.env.COKIE_MAX_AGE_SECONDS) {
+    maxAgeMs = parseInt(process.env.COKIE_MAX_AGE_SECONDS, 10) * 1000;
+  }
+  if (!maxAgeMs || isNaN(maxAgeMs)) {
+    maxAgeMs = parseJwtExpiry(process.env.JWT_EXPIRE) || DEFAULT_MAX_AGE_MS;
+  }
   res.cookie(COOKIE_NAME, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    maxAge,
+    maxAge: maxAgeMs,
   });
 };
 
 /**
- * Clear the auth cookie
+ * Clear the auth cookie (Set-Cookie with Max-Age=0)
  * @param {import('express').Response} res
  */
 const clearAuthCookie = (res) => {
-  res.clearCookie(COOKIE_NAME, {
+  const opts = {
     path: "/",
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
-  });
+    maxAge: 0,
+  };
+  res.cookie(COOKIE_NAME, "", opts);
 };
 
 /**

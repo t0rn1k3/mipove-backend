@@ -51,7 +51,7 @@ const registerUser = asyncHandler(async (req, res) => {
       role: user.role,
       image: user.image || "",
     },
-    token,
+    message: "Registered successfully",
   });
 });
 
@@ -107,7 +107,7 @@ const registerAdmin = asyncHandler(async (req, res) => {
       role: "admin",
       image: admin.image || "",
     },
-    token,
+    message: "Registered successfully",
   });
 });
 
@@ -158,7 +158,7 @@ const registerMaster = asyncHandler(async (req, res) => {
       image: master.image || "",
       slug: master.slug,
     },
-    token,
+    message: "Registered successfully",
   });
 });
 
@@ -200,7 +200,7 @@ const login = asyncHandler(async (req, res) => {
         role: user.role,
         image: user.image || "",
       },
-      token,
+      message: "Logged in successfully",
     });
   }
 
@@ -232,7 +232,7 @@ const login = asyncHandler(async (req, res) => {
         image: master.image || "",
         slug: master.slug,
       },
-      token,
+      message: "Logged in successfully",
     });
   }
 
@@ -261,7 +261,7 @@ const login = asyncHandler(async (req, res) => {
         role: "admin",
         image: admin.image || "",
       },
-      token,
+      message: "Logged in successfully",
     });
   }
 
