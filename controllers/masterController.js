@@ -94,7 +94,7 @@ const getMasters = asyncHandler(async (req, res) => {
   }
 
   const masters = await Master.find(filter)
-    .select("name slug image specialty location")
+    .select("name slug image specialty location bio")
     .lean();
 
   const masterIds = masters.map((m) => m._id);
@@ -125,6 +125,7 @@ const getMasters = asyncHandler(async (req, res) => {
       image: m.image || "",
       specialty: m.specialty || "",
       location: m.location || "",
+      bio: m.bio || "",
     };
     item.rating = statsMap[m._id.toString()] || { average: 0, count: 0 };
     return item;
