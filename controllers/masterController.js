@@ -1,8 +1,24 @@
 const Master = require("../models/Master");
 const Rating = require("../models/Rating");
 const asyncHandler = require("express-async-handler");
+const {
+  MASTER_PROFESSIONS,
+  PROFESSION_IDS,
+  validateSpecialty,
+  getSpecialtyLabel,
+} = require("../config/masterProfessions");
 
 const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// @desc    List allowed master professions (for dropdowns)
+// @route   GET /api/masters/professions
+// @access  Public
+const getProfessions = asyncHandler(async (req, res) => {
+  res.json({
+    success: true,
+    data: MASTER_PROFESSIONS,
+  });
+});
 
 // @desc    Get my portfolio images
 // @route   GET /api/masters/me/portfolio
@@ -80,7 +96,12 @@ const getMasters = asyncHandler(async (req, res) => {
   const filter = { isBlocked: false };
 
   if (specialty && String(specialty).trim()) {
-    filter.specialty = new RegExp(String(specialty).trim(), "i");
+    const spec = String(specialty).trim().toLowerCase().replace(/\s+/g, "_");
+    if (PROFESSION_IDS.has(spec)) {
+      filter.specialty = spec;
+    } else {
+      filter.specialty = new RegExp(escapeRegex(String(specialty).trim()), "i");
+    }
   }
   if (search && String(search).trim()) {
     const term = new RegExp(String(search).trim(), "i");
@@ -118,12 +139,14 @@ const getMasters = asyncHandler(async (req, res) => {
   });
 
   const data = masters.map((m) => {
+    const spec = m.specialty || "";
     const item = {
       _id: m._id,
       name: m.name,
       slug: m.slug,
       image: m.image || "",
-      specialty: m.specialty || "",
+      specialty: spec,
+      specialtyLabel: getSpecialtyLabel(spec),
       location: m.location || "",
       bio: m.bio || "",
     };
@@ -172,6 +195,8 @@ const getMasterBySlug = asyncHandler(async (req, res) => {
     master.rating = { average: 0, count: 0 };
   }
 
+  master.specialtyLabel = getSpecialtyLabel(master.specialty || "");
+
   res.json({
     success: true,
     data: master,
@@ -182,11 +207,20 @@ const getMasterBySlug = asyncHandler(async (req, res) => {
 // @route   POST /api/masters
 // @access  Private (admin)
 const createMaster = asyncHandler(async (req, res) => {
-  const { name, email, password, ...rest } = req.body;
+  const { name, email, password, specialty, ...rest } = req.body;
   if (!name || !email || !password) {
     const err = new Error("Please provide name, email, and password");
     err.statusCode = 400;
     throw err;
+  }
+  if (specialty !== undefined) {
+    const v = validateSpecialty(specialty);
+    if (!v.ok) {
+      const err = new Error(v.message);
+      err.statusCode = 400;
+      throw err;
+    }
+    rest.specialty = v.specialty;
   }
   const slugify = require("../utils/slugify");
   const { hashPassword } = require("../utils/helpers");
@@ -224,9 +258,20 @@ const updateMaster = asyncHandler(async (req, res) => {
     throw err;
   }
 
+  const body = { ...req.body };
+  if (body.specialty !== undefined) {
+    const v = validateSpecialty(body.specialty);
+    if (!v.ok) {
+      const err = new Error(v.message);
+      err.statusCode = 400;
+      throw err;
+    }
+    body.specialty = v.specialty;
+  }
+
   const master = await Master.findOneAndUpdate(
     { slug: req.params.slug, _id: req.user._id },
-    req.body,
+    body,
     { new: true, runValidators: true }
   ).select("-__v");
 
@@ -264,6 +309,7 @@ const deleteMaster = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
+  getProfessions,
   getMasters,
   getMasterBySlug,
   createMaster,

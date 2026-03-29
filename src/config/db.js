@@ -27,10 +27,11 @@ const connectDB = async () => {
     return conn;
   } catch (err) {
     console.error("DB Connection Failed:", err.message);
-    if (err.message.includes("timed out")) {
-      console.error("\n⚠️ Connection Timeout! Check network or firewall.");
+    if (err.cause) console.error("Underlying error:", err.cause.message || err.cause);
+    if (err.message.includes("timed out") || (err.cause && err.cause.code === "ETIMEDOUT")) {
+      console.error("\n⚠️ Connection Timeout! Check network, firewall, or antivirus.");
     } else if (err.message.includes("whitelist") || err.message.includes("IP")) {
-      console.error("\n⚠️ IP Whitelist Issue! Add your IP in MongoDB Atlas.");
+      console.error("\n⚠️ If IP is whitelisted: try Standard (non-SRV) connection string in Atlas.");
     }
     process.exit(1);
   }

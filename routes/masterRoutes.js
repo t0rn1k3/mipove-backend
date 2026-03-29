@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const {
+  getProfessions,
   getMasters,
   getMasterBySlug,
   createMaster,
@@ -29,6 +30,8 @@ const handlePortfolioUpload = (req, res, next) => {
 };
 
 router.route("/").get(getMasters).post(protect, authorize("admin"), createMaster);
+
+router.get("/professions", getProfessions);
 
 router
   .route("/me/portfolio")

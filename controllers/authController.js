@@ -14,6 +14,10 @@ const {
   REFRESH_COOKIE_NAME,
 } = require("../utils/setAuthCookie");
 const { hashPassword, isPasswordMatched } = require("../utils/helpers");
+const {
+  validateSpecialty,
+  getSpecialtyLabel,
+} = require("../config/masterProfessions");
 
 const issueAuthCookies = (res, id, role) => {
   const accessToken = generateToken(id, role, { tokenType: "access" });
@@ -410,7 +414,15 @@ const updateProfile = asyncHandler(async (req, res) => {
 
   // Master-specific fields
   if (isMaster) {
-    if (specialty !== undefined) updateData.specialty = specialty?.trim() || "";
+    if (specialty !== undefined) {
+      const v = validateSpecialty(specialty);
+      if (!v.ok) {
+        const err = new Error(v.message);
+        err.statusCode = 400;
+        throw err;
+      }
+      updateData.specialty = v.specialty === undefined ? undefined : v.specialty;
+    }
     if (location !== undefined) updateData.location = location?.trim() || "";
     if (bio !== undefined) updateData.bio = bio?.trim() || "";
     if (instagram !== undefined) updateData.instagram = instagram?.trim() || "";
@@ -424,7 +436,10 @@ const updateProfile = asyncHandler(async (req, res) => {
         ? await Admin.findById(accountId).select("-password")
         : await User.findById(accountId).select("-password");
     const data = doc.toObject ? doc.toObject() : doc;
-    if (isMaster) data.role = "master";
+    if (isMaster) {
+      data.role = "master";
+      data.specialtyLabel = getSpecialtyLabel(data.specialty || "");
+    }
     if (isAdmin) data.role = "admin";
     if (req.user.role === "user") {
       data.ratedMasters = await getRatedMastersForUser(accountId);
@@ -452,7 +467,10 @@ const updateProfile = asyncHandler(async (req, res) => {
       }).select("-password");
 
   const data = doc.toObject ? doc.toObject() : doc;
-  if (isMaster) data.role = "master";
+  if (isMaster) {
+    data.role = "master";
+    data.specialtyLabel = getSpecialtyLabel(data.specialty || "");
+  }
   if (isAdmin) data.role = "admin";
   if (req.user.role === "user") {
     data.ratedMasters = await getRatedMastersForUser(accountId);
@@ -496,7 +514,10 @@ const getMe = asyncHandler(async (req, res) => {
       ? await Admin.findById(req.user._id).select("-password")
       : await User.findById(req.user._id).select("-password");
   const data = doc.toObject ? doc.toObject() : doc;
-  if (isMaster) data.role = "master";
+  if (isMaster) {
+    data.role = "master";
+    data.specialtyLabel = getSpecialtyLabel(data.specialty || "");
+  }
   if (isAdmin) data.role = "admin";
   if (req.user.role === "user") {
     data.ratedMasters = await getRatedMastersForUser(req.user._id);
