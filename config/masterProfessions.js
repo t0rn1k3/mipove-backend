@@ -3,18 +3,21 @@
  * Frontend: GET /api/masters/professions for dropdown options.
  */
 const MASTER_PROFESSIONS = [
-  { id: "barber", label: "Barber" },
-  { id: "hairdresser", label: "Hairdresser / stylist" },
-  { id: "nail_technician", label: "Nail technician" },
-  { id: "makeup_artist", label: "Makeup artist" },
-  { id: "esthetician", label: "Esthetician / skincare" },
-  { id: "massage_therapist", label: "Massage therapist" },
-  { id: "tattoo_artist", label: "Tattoo artist" },
-  { id: "piercer", label: "Piercer" },
-  { id: "lash_technician", label: "Lash technician" },
-  { id: "brow_specialist", label: "Brow specialist" },
-  { id: "cosmetologist", label: "Cosmetologist" },
-  { id: "spa_therapist", label: "Spa therapist" },
+  { id: "painter", label: "Painter" },
+  { id: "sculptor", label: "Sculptor" },
+  { id: "illustrator", label: "Illustrator" },
+  { id: "calligrapher", label: "Calligrapher" },
+  { id: "tattoo_artist", label: "Tattoo Artist" },
+  { id: "jewelry_Designer", label: "Jewelry Designer" },
+  { id: "ceramicist", label: "Ceramicist" },
+  { id: "enamel_artist", label: "Enamel Artist" },
+  { id: "woodworker", label: "Woodworker" },
+  { id: "tailor", label: "Tailor" },
+  { id: "leather_Crafter", label: "Leather Crafter" },
+  { id: "shoe_Designer", label: "Shoe Designer" },
+  { id: "photographer", label: "Photographer" },
+  { id: "videographer", label: "Videographer" },
+  { id: "restorer", label: "Restorer" },
   { id: "other", label: "Other" },
 ];
 
