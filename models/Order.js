@@ -25,6 +25,10 @@ const orderSchema = new mongoose.Schema(
     },
     scheduledAt: { type: Date, default: null },
     price: { type: Number, min: 0, default: null },
+    attachments: {
+      type: [String],
+      default: [],
+    },
   },
   { timestamps: true, collection: "orders" }
 );
