@@ -5,6 +5,7 @@ const cookieParser = require("cookie-parser");
 const masterRoutes = require("./routes/masterRoutes");
 const authRoutes = require("./routes/authRoutes");
 const adminRoutes = require("./routes/adminRoutes");
+const orderRoutes = require("./routes/orderRoutes");
 const { searchCities } = require("./controllers/geocodeController");
 const {
   globalErrorHandler,
@@ -41,6 +42,7 @@ app.get("/api/health", (req, res) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/masters", masterRoutes);
+app.use("/api/orders", orderRoutes);
 app.use("/api/admin", adminRoutes);
 app.get("/api/geocode/search", searchCities);
 

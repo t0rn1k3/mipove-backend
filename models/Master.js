@@ -34,6 +34,12 @@ const masterSchema = new mongoose.Schema(
     },
     slug: { type: String, unique: true },
     works: [workSchema],
+    /** Orders (from users) this master bookmarked — omitted from default queries */
+    favoriteOrders: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: "Order" }],
+      default: [],
+      select: false,
+    },
   },
   { timestamps: true, collection: "masters" }
 );

@@ -9,6 +9,9 @@ const {
   deleteMaster,
   getMyPortfolio,
   addPortfolioImages,
+  getMyFavoriteOrders,
+  addFavoriteOrder,
+  removeFavoriteOrder,
 } = require("../controllers/masterController");
 const {
   setRating,
@@ -39,6 +42,18 @@ router
   // allow either POST or PATCH for appends
   .post(protect, authorize("master"), handlePortfolioUpload, addPortfolioImages)
   .patch(protect, authorize("master"), handlePortfolioUpload, addPortfolioImages);
+
+router
+  .route("/me/favorite-orders")
+  .get(protect, authorize("master"), getMyFavoriteOrders)
+  .post(protect, authorize("master"), addFavoriteOrder);
+
+router.delete(
+  "/me/favorite-orders/:orderId",
+  protect,
+  authorize("master"),
+  removeFavoriteOrder,
+);
 
 router.get("/:slug/ratings", getMasterRatings);
 router.get("/:slug/rate/me", protect, getMyRating);

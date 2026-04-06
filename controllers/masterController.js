@@ -1,4 +1,6 @@
+const mongoose = require("mongoose");
 const Master = require("../models/Master");
+const Order = require("../models/Order");
 const Rating = require("../models/Rating");
 const asyncHandler = require("express-async-handler");
 const {
@@ -9,6 +11,82 @@ const {
 } = require("../config/masterProfessions");
 
 const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const orderUserSummary = "name email phone image";
+
+// @desc    List orders this master saved as favourites (user orders)
+// @route   GET /api/masters/me/favorite-orders
+// @access  Private (master)
+const getMyFavoriteOrders = asyncHandler(async (req, res) => {
+  const master = await Master.findById(req.user._id).select("favoriteOrders").lean();
+  if (!master) {
+    const err = new Error("Master not found");
+    err.statusCode = 404;
+    throw err;
+  }
+  const ids = master.favoriteOrders || [];
+  const orders = await Order.find({ _id: { $in: ids } })
+    .populate("user", orderUserSummary)
+    .populate("master", "name slug image specialty")
+    .sort({ createdAt: -1 })
+    .lean();
+
+  res.json({
+    success: true,
+    count: orders.length,
+    data: orders,
+  });
+});
+
+// @desc    Add a user order to this master's favourites
+// @route   POST /api/masters/me/favorite-orders
+// @access  Private (master)
+// Body: { "orderId": "<ObjectId>" }
+const addFavoriteOrder = asyncHandler(async (req, res) => {
+  const { orderId } = req.body || {};
+  if (!orderId || !mongoose.Types.ObjectId.isValid(orderId)) {
+    const err = new Error("Valid orderId is required");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const order = await Order.findById(orderId).lean();
+  if (!order) {
+    const err = new Error("Order not found");
+    err.statusCode = 404;
+    throw err;
+  }
+
+  await Master.findByIdAndUpdate(req.user._id, {
+    $addToSet: { favoriteOrders: orderId },
+  });
+
+  res.json({
+    success: true,
+    message: "Order added to favourites",
+  });
+});
+
+// @desc    Remove an order from this master's favourites
+// @route   DELETE /api/masters/me/favorite-orders/:orderId
+// @access  Private (master)
+const removeFavoriteOrder = asyncHandler(async (req, res) => {
+  const { orderId } = req.params;
+  if (!orderId || !mongoose.Types.ObjectId.isValid(orderId)) {
+    const err = new Error("Valid orderId is required");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  await Master.findByIdAndUpdate(req.user._id, {
+    $pull: { favoriteOrders: orderId },
+  });
+
+  res.json({
+    success: true,
+    message: "Order removed from favourites",
+  });
+});
 
 // @desc    List allowed master professions (for dropdowns)
 // @route   GET /api/masters/professions
@@ -317,4 +395,7 @@ module.exports = {
   deleteMaster,
   getMyPortfolio,
   addPortfolioImages,
+  getMyFavoriteOrders,
+  addFavoriteOrder,
+  removeFavoriteOrder,
 };
