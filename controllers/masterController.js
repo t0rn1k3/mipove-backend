@@ -69,12 +69,35 @@ const addFavoriteOrder = asyncHandler(async (req, res) => {
 
 // @desc    Remove an order from this master's favourites
 // @route   DELETE /api/masters/me/favorite-orders/:orderId
+//          DELETE /api/masters/me/favorite-orders  body: { "orderId": "..." } or ?orderId=
 // @access  Private (master)
 const removeFavoriteOrder = asyncHandler(async (req, res) => {
-  const { orderId } = req.params;
+  const orderId =
+    req.params.orderId ||
+    (req.body && req.body.orderId) ||
+    (req.query && req.query.orderId);
+
   if (!orderId || !mongoose.Types.ObjectId.isValid(orderId)) {
-    const err = new Error("Valid orderId is required");
+    const err = new Error(
+      "Valid orderId is required (URL param, JSON body, or query)",
+    );
     err.statusCode = 400;
+    throw err;
+  }
+
+  const master = await Master.findById(req.user._id).select("favoriteOrders").lean();
+  if (!master) {
+    const err = new Error("Master not found");
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const favorited = (master.favoriteOrders || []).some(
+    (id) => String(id) === String(orderId),
+  );
+  if (!favorited) {
+    const err = new Error("Order is not in your favourites");
+    err.statusCode = 404;
     throw err;
   }
 

@@ -46,7 +46,8 @@ router
 router
   .route("/me/favorite-orders")
   .get(protect, authorize("master"), getMyFavoriteOrders)
-  .post(protect, authorize("master"), addFavoriteOrder);
+  .post(protect, authorize("master"), addFavoriteOrder)
+  .delete(protect, authorize("master"), removeFavoriteOrder);
 
 router.delete(
   "/me/favorite-orders/:orderId",
