@@ -5,6 +5,18 @@ dns.setDefaultResultOrder("ipv4first");
 
 const MONGO_URL =
   process.env.MONGODB_URI || process.env.MONGO_URL || "mongodb://localhost:27017/mipove";
+const DEFAULT_DB_NAME = process.env.MONGO_DB_NAME || "mipove";
+
+function getDbNameFromUri(uri) {
+  if (typeof uri !== "string" || !uri) return "";
+  try {
+    const parsed = new URL(uri);
+    const dbName = parsed.pathname.replace(/^\//, "").trim();
+    return dbName;
+  } catch {
+    return "";
+  }
+}
 
 const connectDB = async () => {
   try {
@@ -22,6 +34,11 @@ const connectDB = async () => {
       serverSelectionTimeoutMS: 30000,
       socketTimeoutMS: 45000,
     };
+    // If URI doesn't include a DB name (Atlas defaults to "test"), pin to mipove.
+    if (!getDbNameFromUri(MONGO_URL)) {
+      options.dbName = DEFAULT_DB_NAME;
+      console.log(`MongoDB URI has no database name; using "${DEFAULT_DB_NAME}"`);
+    }
     const conn = await mongoose.connect(MONGO_URL, options);
     console.log("DB Connected Successfully");
     return conn;

@@ -22,7 +22,14 @@ async function createAdmin() {
     process.env.MONGODB_URI ||
     process.env.MONGO_URI ||
     "mongodb://localhost:27017/mipove";
-  await mongoose.connect(mongoUri);
+  const defaultDbName = process.env.MONGO_DB_NAME || "mipove";
+  let dbName = "";
+  try {
+    dbName = new URL(mongoUri).pathname.replace(/^\//, "").trim();
+  } catch {
+    dbName = "";
+  }
+  await mongoose.connect(mongoUri, dbName ? {} : { dbName: defaultDbName });
 
   const adminSecret = process.env.ADMIN_SECRET;
   if (adminSecret) {
