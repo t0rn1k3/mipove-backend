@@ -122,6 +122,40 @@ const getHistory = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    List target ids already unlocked for an action (e.g. order ids for view_contact)
+// @route   GET /api/credits/unlocks
+// @access  Private (master)
+// Query:  action (required) — must be a configured spend action
+const getUnlocks = asyncHandler(async (req, res) => {
+  const actionParam = req.query.action;
+  const action =
+    actionParam != null && typeof actionParam === "string"
+      ? actionParam.trim()
+      : "";
+  if (!action) {
+    const err = new Error("action query parameter is required");
+    err.statusCode = 400;
+    throw err;
+  }
+  if (!SPEND_ACTIONS.includes(action)) {
+    const err = new Error(
+      `Invalid action. Allowed: ${SPEND_ACTIONS.join(", ")}`,
+    );
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const rows = await CreditUnlock.find({
+    master: req.user._id,
+    action,
+  })
+    .select("targetId -_id")
+    .lean();
+
+  const unlocks = rows.map((r) => String(r.targetId));
+  res.json({ unlocks });
+});
+
 // @desc    Spend credits for a gated action (idempotent via CreditUnlock)
 // @route   POST /api/credits/spend
 // @access  Private (master)
@@ -263,5 +297,6 @@ const spendCredits = asyncHandler(async (req, res) => {
 module.exports = {
   getBalance,
   getHistory,
+  getUnlocks,
   spendCredits,
 };
