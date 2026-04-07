@@ -118,34 +118,22 @@ const spendCredits = asyncHandler(async (req, res) => {
         targetId,
       };
     } else {
-      const beforeDoc = await Master.findById(masterId)
-        .session(session)
-        .select("credits");
-      if (!beforeDoc) {
+      const master = await Master.findById(masterId).session(session);
+      if (!master) {
         const err = new Error("Master not found");
         err.statusCode = 404;
         throw err;
       }
-      const balanceBefore = normalizeBalance(beforeDoc.credits);
+
+      const balanceBefore = normalizeBalance(master.credits);
       if (balanceBefore < cost) {
         const err = new Error("Insufficient credits");
-        err.statusCode = 400;
+        err.statusCode = 402;
         throw err;
       }
 
-      const after = await Master.findOneAndUpdate(
-        { _id: masterId, credits: { $gte: cost } },
-        { $inc: { credits: -cost } },
-        { new: true, session, select: "credits" },
-      );
-
-      if (!after) {
-        const err = new Error("Insufficient credits");
-        err.statusCode = 400;
-        throw err;
-      }
-
-      const balanceAfter = normalizeBalance(after.credits);
+      master.credits = balanceBefore - cost;
+      await master.save({ session });
 
       await CreditTransaction.create(
         [
@@ -153,8 +141,8 @@ const spendCredits = asyncHandler(async (req, res) => {
             master: masterId,
             type: "spend",
             amount: -cost,
-            balanceBefore,
-            balanceAfter,
+            balanceBefore: master.credits + cost,
+            balanceAfter: master.credits,
             action,
             metadata: { orderId: targetId },
           },
@@ -170,7 +158,7 @@ const spendCredits = asyncHandler(async (req, res) => {
       await session.commitTransaction();
       result = {
         charged: true,
-        balance: balanceAfter,
+        balance: normalizeBalance(master.credits),
         cost,
         action,
         targetId,
