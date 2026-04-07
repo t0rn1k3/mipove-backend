@@ -8,6 +8,7 @@ const adminRoutes = require("./routes/adminRoutes");
 const orderRoutes = require("./routes/orderRoutes");
 const uploadRoutes = require("./routes/uploadRoutes");
 const creditRoutes = require("./routes/creditRoutes");
+const { handlePaymentWebhook } = require("./controllers/paymentWebhookController");
 const { searchCities } = require("./controllers/geocodeController");
 const {
   globalErrorHandler,
@@ -26,6 +27,14 @@ app.use(
 );
 
 app.use(cookieParser());
+
+// Payment provider webhook: raw body required for Callback-Signature (RSA-SHA256) verification
+app.post(
+  "/api/webhooks/payment",
+  express.raw({ type: "*/*", limit: "1mb" }),
+  handlePaymentWebhook,
+);
+
 app.use(
   express.json({
     type: (req) => {
