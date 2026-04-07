@@ -15,11 +15,13 @@ const {
   blockMaster,
   unblockMaster,
   getDashboardStats,
+  adjustMasterCredits,
 } = require("../controllers/adminController");
 const { protect, authorize } = require("../middlewares/auth");
 
 router.use(protect, authorize("admin"));
 
+router.post("/credits/adjust", adjustMasterCredits);
 router.get("/stats", getDashboardStats);
 router.get("/stats/growth", getGrowthRate);
 

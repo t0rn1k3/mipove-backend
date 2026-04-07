@@ -1,5 +1,7 @@
+const mongoose = require("mongoose");
 const User = require("../models/User");
 const Master = require("../models/Master");
+const CreditTransaction = require("../models/CreditTransaction");
 const slugify = require("../utils/slugify");
 const asyncHandler = require("express-async-handler");
 const { hashPassword } = require("../utils/helpers");
@@ -362,6 +364,101 @@ const getDashboardStats = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Adjust master credits (grant or deduct)
+// @route   POST /api/admin/credits/adjust
+// @access  Private (admin)
+// Body:   { masterId, amount, note } — amount may be negative; result cannot go below 0
+const adjustMasterCredits = asyncHandler(async (req, res) => {
+  const rawId = req.body?.masterId;
+  const rawAmount = req.body?.amount;
+  const rawNote = req.body?.note;
+
+  const masterIdStr =
+    rawId != null && typeof rawId === "string" ? rawId.trim() : "";
+  if (!masterIdStr || !mongoose.Types.ObjectId.isValid(masterIdStr)) {
+    const err = new Error("Valid masterId is required");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const amount = Number(rawAmount);
+  if (!Number.isFinite(amount) || amount === 0) {
+    const err = new Error("amount must be a non-zero number");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const note =
+    rawNote != null && typeof rawNote === "string" ? rawNote.trim() : "";
+  if (!note) {
+    const err = new Error("note is required");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const session = await mongoose.startSession();
+  try {
+    await session.startTransaction();
+
+    const master = await Master.findById(masterIdStr).session(session);
+    if (!master) {
+      const err = new Error("Master not found");
+      err.statusCode = 404;
+      throw err;
+    }
+
+    const balanceBefore =
+      typeof master.credits === "number" &&
+      Number.isFinite(master.credits) &&
+      master.credits >= 0
+        ? master.credits
+        : 0;
+    const balanceAfter = balanceBefore + amount;
+    if (balanceAfter < 0) {
+      const err = new Error("Adjustment would make credits negative");
+      err.statusCode = 400;
+      throw err;
+    }
+
+    master.credits = balanceAfter;
+    await master.save({ session });
+
+    await CreditTransaction.create(
+      [
+        {
+          master: master._id,
+          type: "admin_adjust",
+          amount,
+          balanceBefore,
+          balanceAfter,
+          metadata: { note },
+        },
+      ],
+      { session },
+    );
+
+    await session.commitTransaction();
+
+    res.json({
+      success: true,
+      data: {
+        masterId: String(master._id),
+        credits: balanceAfter,
+        amount,
+      },
+    });
+  } catch (err) {
+    try {
+      await session.abortTransaction();
+    } catch {
+      /* noop */
+    }
+    throw err;
+  } finally {
+    session.endSession();
+  }
+});
+
 module.exports = {
   getAllUsers,
   getUser,
@@ -377,4 +474,5 @@ module.exports = {
   blockMaster,
   unblockMaster,
   getDashboardStats,
+  adjustMasterCredits,
 };
