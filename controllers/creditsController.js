@@ -67,6 +67,34 @@ async function createBogIpayCheckoutSession({ amountGel, orderId, callbackUrl, r
   return body || {};
 }
 
+function firstHttpUrl(...candidates) {
+  for (const c of candidates) {
+    if (typeof c !== "string") continue;
+    const t = c.trim();
+    if (t.startsWith("http://") || t.startsWith("https://")) return t;
+  }
+  return null;
+}
+
+/** BOG iPay / ecommerce order responses vary; collect known checkout URL fields. */
+function extractBogPaymentUrl(provider) {
+  if (!provider || typeof provider !== "object") return null;
+  const links = provider.links;
+  return firstHttpUrl(
+    links?.payment,
+    links?.checkout,
+    provider.checkout_url,
+    provider.redirect_url,
+    provider.payment_url,
+    provider.paymentUrl,
+    provider.payment?.redirect_url,
+    provider.payment?.url,
+    provider.payment?.checkout_url,
+    provider.data?.checkout_url,
+    provider.data?.redirect_url,
+  );
+}
+
 async function assertSpendTargetOk(action, targetId) {
   if (action === "view_contact") {
     if (!mongoose.Types.ObjectId.isValid(targetId)) {
@@ -263,18 +291,15 @@ const createPurchase = asyncHandler(async (req, res) => {
       await pending.save();
     }
 
-    return res.status(201).json({
-      success: true,
-      purchaseId: pending._id,
-      providerTxId: pending.providerTxId || null,
-      checkoutUrl:
-        provider?.links?.payment ||
-        provider?.links?.checkout ||
-        provider?.checkout_url ||
-        provider?.redirect_url ||
-        null,
-      provider,
-    });
+    const paymentUrl = extractBogPaymentUrl(provider);
+    if (!paymentUrl) {
+      const err = new Error("Payment provider did not return a checkout URL");
+      err.statusCode = 502;
+      err.details = provider;
+      throw err;
+    }
+
+    return res.status(201).json({ paymentUrl });
   } catch (err) {
     pending.status = "failed";
     pending.completedAt = new Date();
