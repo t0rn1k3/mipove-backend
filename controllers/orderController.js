@@ -4,6 +4,11 @@ const mongoose = require("mongoose");
 const Order = require("../models/Order");
 const Master = require("../models/Master");
 const { uploadToB2 } = require("../utils/uploadToB2");
+const {
+  loadContactUnlockedSet,
+  applyMasterContactGate,
+  applyMasterContactGateToOrders,
+} = require("../utils/orderContactGate");
 const asyncHandler = require("express-async-handler");
 
 const userSummary = "name email phone image";
@@ -110,11 +115,15 @@ const createOrder = asyncHandler(async (req, res) => {
       ? await Order.create({ ...base, user: req.user._id })
       : await Order.create({ ...base, orderingMaster: req.user._id });
 
-  const populated = await orderDetailQuery(Order.findById(order._id)).lean();
+  let data = await orderDetailQuery(Order.findById(order._id)).lean();
+  if (req.user.role === "master") {
+    const unlockedSet = await loadContactUnlockedSet(req.user._id, [String(data._id)]);
+    data = applyMasterContactGate(data, req.user._id, unlockedSet);
+  }
 
   res.status(201).json({
     success: true,
-    data: populated,
+    data,
     message: "Order created successfully",
   });
 });
@@ -138,10 +147,11 @@ const getOrders = asyncHandler(async (req, res) => {
     const orders = await orderDetailQuery(
       Order.find(filter).sort({ createdAt: -1 }),
     ).lean();
+    const data = await applyMasterContactGateToOrders(orders, req.user._id);
     return res.json({
       success: true,
-      count: orders.length,
-      data: orders,
+      count: data.length,
+      data,
     });
   }
 
@@ -181,9 +191,17 @@ const getOrderById = asyncHandler(async (req, res) => {
     throw err;
   }
 
+  let data = order;
+  if (req.user.role === "master") {
+    const unlockedSet = await loadContactUnlockedSet(req.user._id, [
+      String(order._id),
+    ]);
+    data = applyMasterContactGate(order, req.user._id, unlockedSet);
+  }
+
   res.json({
     success: true,
-    data: order,
+    data,
   });
 });
 
@@ -273,9 +291,15 @@ const updateOrder = asyncHandler(async (req, res) => {
     }),
   ).lean();
 
+  let data = updated;
+  if (req.user.role === "master") {
+    const unlockedSet = await loadContactUnlockedSet(req.user._id, [String(updated._id)]);
+    data = applyMasterContactGate(updated, req.user._id, unlockedSet);
+  }
+
   res.json({
     success: true,
-    data: updated,
+    data,
     message: "Order updated successfully",
   });
 });

@@ -33,10 +33,12 @@ const getMyFavoriteOrders = asyncHandler(async (req, res) => {
     .sort({ createdAt: -1 })
     .lean();
 
+  const data = await applyMasterContactGateToOrders(orders, req.user._id);
+
   res.json({
     success: true,
-    count: orders.length,
-    data: orders,
+    count: data.length,
+    data,
   });
 });
 
@@ -331,6 +333,7 @@ const createMaster = asyncHandler(async (req, res) => {
     rest.specialty = v.specialty;
   }
   const slugify = require("../utils/slugify");
+const { applyMasterContactGateToOrders } = require("../utils/orderContactGate");
 const { uploadToB2 } = require("../utils/uploadToB2");
   const { hashPassword } = require("../utils/helpers");
   const existing = await Master.findOne({ email: email.toLowerCase().trim() });
