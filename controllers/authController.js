@@ -19,6 +19,7 @@ const {
   getSpecialtyLabel,
 } = require("../config/masterProfessions");
 const { uploadToB2 } = require("../utils/uploadToB2");
+const CreditTransaction = require("../models/CreditTransaction");
 
 const issueAuthCookies = (res, id, role) => {
   const accessToken = generateToken(id, role, { tokenType: "access" });
@@ -161,6 +162,25 @@ const registerMaster = asyncHandler(async (req, res) => {
     slug,
   });
 
+  let REGISTRATION_BONUS = parseInt(
+    process.env.CREDIT_REGISTRATION_BONUS || "30",
+    10,
+  );
+  if (!Number.isFinite(REGISTRATION_BONUS) || REGISTRATION_BONUS < 0) {
+    REGISTRATION_BONUS = 30;
+  }
+  master.credits = REGISTRATION_BONUS;
+  await master.save();
+
+  await CreditTransaction.create({
+    master: master._id,
+    type: "grant",
+    amount: REGISTRATION_BONUS,
+    balanceBefore: 0,
+    balanceAfter: REGISTRATION_BONUS,
+    action: "registration_bonus",
+  });
+
   issueAuthCookies(res, master._id, "master");
 
   res.status(201).json({
@@ -173,6 +193,7 @@ const registerMaster = asyncHandler(async (req, res) => {
       role: "master",
       image: master.image || "",
       slug: master.slug,
+      credits: master.credits,
     },
     message: "Registered successfully",
   });
