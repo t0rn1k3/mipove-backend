@@ -39,6 +39,8 @@ const pendingPurchaseSchema = new mongoose.Schema(
       default: null,
     },
     completedAt: { type: Date, default: null },
+    /** Set on creation; cleared when status moves to completed/failed. Mongo TTL removes stale pending rows. */
+    expireAt: { type: Date, default: null },
   },
   {
     timestamps: { createdAt: true, updatedAt: false },
@@ -51,6 +53,13 @@ pendingPurchaseSchema.index(
   { providerTxId: 1 },
   { unique: true, sparse: true },
 );
+/**
+ * Auto-expire documents still in "pending" after 30 min.
+ * Mongo TTL worker runs ~every 60 s, so actual removal may lag slightly.
+ * Only documents where `expireAt` is set (status === "pending" at creation) are affected;
+ * the webhook handler clears `expireAt` when moving to "completed" / "failed".
+ */
+pendingPurchaseSchema.index({ expireAt: 1 }, { expireAfterSeconds: 0 });
 
 const PendingPurchase = mongoose.model("PendingPurchase", pendingPurchaseSchema);
 PendingPurchase.STATUSES = PENDING_PURCHASE_STATUSES;

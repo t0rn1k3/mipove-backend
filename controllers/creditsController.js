@@ -271,15 +271,22 @@ const createPurchase = asyncHandler(async (req, res) => {
   }
 
   const callbackUrl = requiredEnv("PAYMENT_CALLBACK_URL");
+  if (!callbackUrl.startsWith("https://")) {
+    const err = new Error("PAYMENT_CALLBACK_URL must use HTTPS");
+    err.statusCode = 500;
+    throw err;
+  }
   const returnUrl = requiredEnv("PAYMENT_RETURN_URL");
   const credits = Number(pack.credits || 0) + Number(pack.bonusCredits || 0);
 
+  const PURCHASE_TTL_MS = 30 * 60 * 1000;
   const pending = await PendingPurchase.create({
     master: req.user._id,
     packId: pack._id,
     amountGel: Number(pack.priceGel || 0),
     credits,
     status: "pending",
+    expireAt: new Date(Date.now() + PURCHASE_TTL_MS),
   });
 
   try {
@@ -314,6 +321,7 @@ const createPurchase = asyncHandler(async (req, res) => {
   } catch (err) {
     pending.status = "failed";
     pending.completedAt = new Date();
+    pending.expireAt = null;
     await pending.save();
     throw err;
   }

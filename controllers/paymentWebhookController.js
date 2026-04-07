@@ -79,6 +79,7 @@ async function applyFailedIfPending(orderIdStr, providerTxnId) {
     }
     purchase.status = "failed";
     purchase.completedAt = new Date();
+    purchase.expireAt = null;
     if (providerTxnId) {
       purchase.providerTxId = String(providerTxnId);
     }
@@ -113,6 +114,7 @@ async function applyCompletedIfPending(orderIdStr, providerTxnId) {
     if (!master) {
       purchase.status = "failed";
       purchase.completedAt = new Date();
+      purchase.expireAt = null;
       if (providerTxnId) {
         purchase.providerTxId = String(providerTxnId);
       }
@@ -146,6 +148,7 @@ async function applyCompletedIfPending(orderIdStr, providerTxnId) {
 
     purchase.status = "completed";
     purchase.completedAt = new Date();
+    purchase.expireAt = null;
     if (providerTxnId) {
       purchase.providerTxId = String(providerTxnId);
     }
