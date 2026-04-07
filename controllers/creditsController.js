@@ -1,6 +1,8 @@
 const mongoose = require("mongoose");
 const Master = require("../models/Master");
 const Order = require("../models/Order");
+const CreditPack = require("../models/CreditPack");
+const PendingPurchase = require("../models/PendingPurchase");
 const CreditTransaction = require("../models/CreditTransaction");
 const CreditUnlock = require("../models/CreditUnlock");
 const asyncHandler = require("express-async-handler");
@@ -11,6 +13,58 @@ function normalizeBalance(value) {
     return value;
   }
   return 0;
+}
+
+function requiredEnv(name) {
+  const v = process.env[name];
+  if (!v || !String(v).trim()) {
+    const err = new Error(`Missing required env var: ${name}`);
+    err.statusCode = 500;
+    throw err;
+  }
+  return String(v).trim();
+}
+
+async function createBogIpayCheckoutSession({ amountGel, orderId, callbackUrl, returnUrl }) {
+  const url = process.env.PAYMENT_BOG_IPAY_URL || "https://api.bog.ge/payments/v1/ecommerce/orders";
+  const token = requiredEnv("PAYMENT_BOG_IPAY_TOKEN");
+
+  const payload = {
+    amount: amountGel,
+    currency: "GEL",
+    external_order_id: String(orderId),
+    callback_url: callbackUrl,
+    redirect_urls: {
+      success: returnUrl,
+      fail: returnUrl,
+    },
+  };
+
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const rawText = await resp.text();
+  let body = null;
+  try {
+    body = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    body = { raw: rawText };
+  }
+
+  if (!resp.ok) {
+    const err = new Error(`Payment provider create session failed (${resp.status})`);
+    err.statusCode = 502;
+    err.details = body;
+    throw err;
+  }
+
+  return body || {};
 }
 
 async function assertSpendTargetOk(action, targetId) {
@@ -156,6 +210,79 @@ const getUnlocks = asyncHandler(async (req, res) => {
   res.json({ unlocks });
 });
 
+// @desc    Start credit-pack purchase (BOG iPay checkout session)
+// @route   POST /api/credits/purchase
+// @access  Private (master)
+// Body: { packId: "pro" }
+const createPurchase = asyncHandler(async (req, res) => {
+  const packIdRaw = req.body?.packId;
+  const packId =
+    packIdRaw != null && typeof packIdRaw === "string" ? packIdRaw.trim() : "";
+  if (!packId) {
+    const err = new Error("packId is required");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const pack = await CreditPack.findById(packId).lean();
+  if (!pack || !pack.active) {
+    const err = new Error("Credit pack not found or inactive");
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const callbackUrl = requiredEnv("PAYMENT_CALLBACK_URL");
+  const returnUrl = requiredEnv("PAYMENT_RETURN_URL");
+  const credits = Number(pack.credits || 0) + Number(pack.bonusCredits || 0);
+
+  const pending = await PendingPurchase.create({
+    master: req.user._id,
+    packId: pack._id,
+    amountGel: Number(pack.priceGel || 0),
+    credits,
+    status: "pending",
+  });
+
+  try {
+    const provider = await createBogIpayCheckoutSession({
+      amountGel: pending.amountGel,
+      orderId: pending._id,
+      callbackUrl,
+      returnUrl,
+    });
+
+    const providerTxId =
+      provider?.id ||
+      provider?.order_id ||
+      provider?.payment_id ||
+      provider?.data?.id ||
+      null;
+
+    if (providerTxId) {
+      pending.providerTxId = String(providerTxId);
+      await pending.save();
+    }
+
+    return res.status(201).json({
+      success: true,
+      purchaseId: pending._id,
+      providerTxId: pending.providerTxId || null,
+      checkoutUrl:
+        provider?.links?.payment ||
+        provider?.links?.checkout ||
+        provider?.checkout_url ||
+        provider?.redirect_url ||
+        null,
+      provider,
+    });
+  } catch (err) {
+    pending.status = "failed";
+    pending.completedAt = new Date();
+    await pending.save();
+    throw err;
+  }
+});
+
 // @desc    Spend credits for a gated action (idempotent via CreditUnlock)
 // @route   POST /api/credits/spend
 // @access  Private (master)
@@ -298,5 +425,6 @@ module.exports = {
   getBalance,
   getHistory,
   getUnlocks,
+  createPurchase,
   spendCredits,
 };

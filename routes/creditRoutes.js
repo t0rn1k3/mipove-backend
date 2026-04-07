@@ -5,12 +5,14 @@ const {
   getBalance,
   getHistory,
   getUnlocks,
+  createPurchase,
   spendCredits,
 } = require("../controllers/creditsController");
 
 router.get("/balance", protect, authorize("master"), getBalance);
 router.get("/history", protect, authorize("master"), getHistory);
 router.get("/unlocks", protect, authorize("master"), getUnlocks);
+router.post("/purchase", protect, authorize("master"), createPurchase);
 router.post("/spend", protect, authorize("master"), spendCredits);
 
 module.exports = router;
