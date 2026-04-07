@@ -157,6 +157,17 @@ async function buildUnlockData(action, targetId) {
   return {};
 }
 
+// @desc    List active credit packs
+// @route   GET /api/credits/packs
+// @access  Public
+const getPacks = asyncHandler(async (req, res) => {
+  const rows = await CreditPack.find({ active: true })
+    .select("_id name credits bonusCredits priceGel")
+    .sort({ priceGel: 1 })
+    .lean();
+  res.json({ packs: rows });
+});
+
 // @desc    Current credit balance for logged-in master
 // @route   GET /api/credits/balance
 // @access  Private (master)
@@ -447,6 +458,7 @@ const spendCredits = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
+  getPacks,
   getBalance,
   getHistory,
   getUnlocks,
