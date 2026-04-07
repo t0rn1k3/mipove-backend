@@ -22,6 +22,7 @@ const masterSchema = new mongoose.Schema(
     phone: String,
     isBlocked: { type: Boolean, default: false },
     lastActiveAt: { type: Date, default: null },
+    credits: { type: Number, default: 0, min: 0 },
     specialty: String,
     location: String,
     bio: String,
