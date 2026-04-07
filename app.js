@@ -7,6 +7,7 @@ const authRoutes = require("./routes/authRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const orderRoutes = require("./routes/orderRoutes");
 const uploadRoutes = require("./routes/uploadRoutes");
+const creditRoutes = require("./routes/creditRoutes");
 const { searchCities } = require("./controllers/geocodeController");
 const {
   globalErrorHandler,
@@ -45,6 +46,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/masters", masterRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/upload", uploadRoutes);
+app.use("/api/credits", creditRoutes);
 app.use("/api/admin", adminRoutes);
 app.get("/api/geocode/search", searchCities);
 
