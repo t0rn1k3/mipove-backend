@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const Master = require("../models/Master");
+const Order = require("../models/Order");
 const CreditTransaction = require("../models/CreditTransaction");
 const CreditUnlock = require("../models/CreditUnlock");
 const asyncHandler = require("express-async-handler");
@@ -10,6 +11,68 @@ function normalizeBalance(value) {
     return value;
   }
   return 0;
+}
+
+async function assertSpendTargetOk(action, targetId) {
+  if (action === "view_contact") {
+    if (!mongoose.Types.ObjectId.isValid(targetId)) {
+      const err = new Error("Invalid order id");
+      err.statusCode = 400;
+      throw err;
+    }
+    const exists = await Order.exists({ _id: targetId });
+    if (!exists) {
+      const err = new Error("Order not found");
+      err.statusCode = 404;
+      throw err;
+    }
+    return;
+  }
+  if (action === "feature_gallery") {
+    const q = mongoose.Types.ObjectId.isValid(targetId)
+      ? { _id: targetId }
+      : { slug: targetId };
+    const exists = await Master.exists(q);
+    if (!exists) {
+      const err = new Error("Master not found");
+      err.statusCode = 404;
+      throw err;
+    }
+  }
+}
+
+/** Payload returned in `data` after a successful unlock (or idempotent replay). */
+async function buildUnlockData(action, targetId) {
+  if (action === "view_contact") {
+    const order = await Order.findById(targetId)
+      .populate("user", "email phone")
+      .populate("orderingMaster", "email phone")
+      .lean();
+    if (!order) {
+      return { email: "", phone: "" };
+    }
+    if (order.user && order.user._id) {
+      return {
+        email: String(order.user.email || ""),
+        phone: String(order.user.phone || ""),
+      };
+    }
+    if (order.orderingMaster && order.orderingMaster._id) {
+      return {
+        email: String(order.orderingMaster.email || ""),
+        phone: String(order.orderingMaster.phone || ""),
+      };
+    }
+    return { email: "", phone: "" };
+  }
+  if (action === "feature_gallery") {
+    const q = mongoose.Types.ObjectId.isValid(targetId)
+      ? { _id: targetId }
+      : { slug: targetId };
+    const m = await Master.findOne(q).select("portfolioImages").lean();
+    return { images: m?.portfolioImages || [] };
+  }
+  return {};
 }
 
 // @desc    Current credit balance for logged-in master
@@ -89,8 +152,13 @@ const spendCredits = asyncHandler(async (req, res) => {
     throw err;
   }
 
+  await assertSpendTargetOk(action, targetId);
+
   const masterId = req.user._id;
+  /** @type {{ remaining: number } | null} */
   let result = null;
+  /** @type {{ message: string; required: number; balance: number } | null} */
+  let insufficientPayload = null;
 
   const session = await mongoose.startSession();
   try {
@@ -110,13 +178,7 @@ const spendCredits = asyncHandler(async (req, res) => {
         .select("credits")
         .lean();
       await session.commitTransaction();
-      result = {
-        charged: false,
-        idempotent: true,
-        balance: normalizeBalance(m?.credits),
-        action,
-        targetId,
-      };
+      result = { remaining: normalizeBalance(m?.credits) };
     } else {
       const master = await Master.findById(masterId).session(session);
       if (!master) {
@@ -127,42 +189,42 @@ const spendCredits = asyncHandler(async (req, res) => {
 
       const balanceBefore = normalizeBalance(master.credits);
       if (balanceBefore < cost) {
-        const err = new Error("Insufficient credits");
-        err.statusCode = 402;
-        throw err;
+        await session.abortTransaction();
+        insufficientPayload = {
+          message: "Insufficient credits",
+          required: cost,
+          balance: balanceBefore,
+        };
+      } else {
+        master.credits = balanceBefore - cost;
+        await master.save({ session });
+
+        await CreditTransaction.create(
+          [
+            {
+              master: masterId,
+              type: "spend",
+              amount: -cost,
+              balanceBefore: master.credits + cost,
+              balanceAfter: master.credits,
+              action,
+              metadata:
+                action === "view_contact"
+                  ? { orderId: targetId }
+                  : { note: targetId },
+            },
+          ],
+          { session },
+        );
+
+        await CreditUnlock.create(
+          [{ master: masterId, action, targetId }],
+          { session },
+        );
+
+        await session.commitTransaction();
+        result = { remaining: normalizeBalance(master.credits) };
       }
-
-      master.credits = balanceBefore - cost;
-      await master.save({ session });
-
-      await CreditTransaction.create(
-        [
-          {
-            master: masterId,
-            type: "spend",
-            amount: -cost,
-            balanceBefore: master.credits + cost,
-            balanceAfter: master.credits,
-            action,
-            metadata: { orderId: targetId },
-          },
-        ],
-        { session },
-      );
-
-      await CreditUnlock.create(
-        [{ master: masterId, action, targetId }],
-        { session },
-      );
-
-      await session.commitTransaction();
-      result = {
-        charged: true,
-        balance: normalizeBalance(master.credits),
-        cost,
-        action,
-        targetId,
-      };
     }
   } catch (err) {
     try {
@@ -172,13 +234,7 @@ const spendCredits = asyncHandler(async (req, res) => {
     }
     if (err && err.code === 11000) {
       const m = await Master.findById(masterId).select("credits").lean();
-      result = {
-        charged: false,
-        idempotent: true,
-        balance: normalizeBalance(m?.credits),
-        action,
-        targetId,
-      };
+      result = { remaining: normalizeBalance(m?.credits) };
     } else {
       throw err;
     }
@@ -186,7 +242,22 @@ const spendCredits = asyncHandler(async (req, res) => {
     session.endSession();
   }
 
-  res.json(result);
+  if (insufficientPayload) {
+    return res.status(402).json(insufficientPayload);
+  }
+
+  if (!result) {
+    const err = new Error("Spend failed");
+    err.statusCode = 500;
+    throw err;
+  }
+
+  const data = await buildUnlockData(action, targetId);
+  return res.json({
+    success: true,
+    remaining: result.remaining,
+    data,
+  });
 });
 
 module.exports = {
