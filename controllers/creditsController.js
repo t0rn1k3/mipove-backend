@@ -25,9 +25,24 @@ function requiredEnv(name) {
   return String(v).trim();
 }
 
+function requiredPaymentBearerToken() {
+  const t = process.env.PAYMENT_BOG_IPAY_TOKEN || process.env.IPAY_SECRET_KEY;
+  if (!t || !String(t).trim()) {
+    const err = new Error(
+      "Missing required env var: PAYMENT_BOG_IPAY_TOKEN or IPAY_SECRET_KEY",
+    );
+    err.statusCode = 500;
+    throw err;
+  }
+  return String(t).trim();
+}
+
 async function createBogIpayCheckoutSession({ amountGel, orderId, callbackUrl, returnUrl }) {
-  const url = process.env.PAYMENT_BOG_IPAY_URL || "https://api.bog.ge/payments/v1/ecommerce/orders";
-  const token = requiredEnv("PAYMENT_BOG_IPAY_TOKEN");
+  const url =
+    process.env.PAYMENT_BOG_IPAY_URL ||
+    process.env.IPAY_API_URL ||
+    "https://api.bog.ge/payments/v1/ecommerce/orders";
+  const token = requiredPaymentBearerToken();
 
   const payload = {
     amount: amountGel,

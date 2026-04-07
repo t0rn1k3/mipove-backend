@@ -1,8 +1,15 @@
 /** Credit cost per spend action — extend here as new gated features ship. */
 
+function parseNonNegativeInt(raw, fallback) {
+  if (raw == null || raw === "") return fallback;
+  const n = parseInt(String(raw), 10);
+  if (!Number.isFinite(n) || n < 0) return fallback;
+  return n;
+}
+
 const CREDIT_SPEND_COSTS = {
-  view_contact: 1,
-  feature_gallery: 5,
+  view_contact: parseNonNegativeInt(process.env.CREDIT_COST_VIEW_CONTACT, 1),
+  feature_gallery: parseNonNegativeInt(process.env.CREDIT_COST_FEATURE_GALLERY, 5),
 };
 
 const SPEND_ACTIONS = Object.freeze(Object.keys(CREDIT_SPEND_COSTS));
