@@ -18,6 +18,7 @@ const {
   validateSpecialty,
   getSpecialtyLabel,
 } = require("../config/masterProfessions");
+const { uploadToB2 } = require("../utils/uploadToB2");
 
 const issueAuthCookies = (res, id, role) => {
   const accessToken = generateToken(id, role, { tokenType: "access" });
@@ -402,8 +403,13 @@ const updateProfile = asyncHandler(async (req, res) => {
     updateData.password = await hashPassword(password);
   }
 
-  if (req.file && req.file.filename) {
-    updateData.image = `/uploads/profiles/${req.file.filename}`;
+  if (req.file && req.file.buffer) {
+    updateData.image = await uploadToB2(
+      req.file.buffer,
+      req.file.originalname,
+      req.file.mimetype,
+      "profiles",
+    );
   } else if (req.body?.image !== undefined) {
     const err = new Error(
       "Profile image must be uploaded as multipart/form-data (field name: image).",

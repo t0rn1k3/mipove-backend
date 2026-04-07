@@ -37,7 +37,6 @@ const connectDB = async () => {
     // If URI doesn't include a DB name (Atlas defaults to "test"), pin to mipove.
     if (!getDbNameFromUri(MONGO_URL)) {
       options.dbName = DEFAULT_DB_NAME;
-      console.log(`MongoDB URI has no database name; using "${DEFAULT_DB_NAME}"`);
     }
     const conn = await mongoose.connect(MONGO_URL, options);
     console.log("DB Connected Successfully");

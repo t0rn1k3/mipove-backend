@@ -11,10 +11,10 @@ const {
   updateProfile,
 } = require("../controllers/authController");
 const { protect } = require("../middlewares/auth");
-const upload = require("../config/multer");
+const { profileImageUpload } = require("../config/memoryMulter");
 
 const handleUpload = (req, res, next) => {
-  upload.single("image")(req, res, (err) => {
+  profileImageUpload.single("image")(req, res, (err) => {
     if (err) {
       err.statusCode = 400;
       return next(err);

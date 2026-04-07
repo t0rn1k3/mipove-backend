@@ -4,12 +4,21 @@ const ORDER_STATUSES = ["pending", "accepted", "in_progress", "completed", "canc
 
 const orderSchema = new mongoose.Schema(
   {
+    /** Client user (regular customer) — mutually exclusive with orderingMaster */
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      default: null,
       index: true,
     },
+    /** Master requesting service from another professional — mutually exclusive with user */
+    orderingMaster: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Master",
+      default: null,
+      index: true,
+    },
+    /** Assigned / target professional (optional) */
     master: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Master",
@@ -32,6 +41,17 @@ const orderSchema = new mongoose.Schema(
   },
   { timestamps: true, collection: "orders" }
 );
+
+orderSchema.pre("validate", function (next) {
+  const hasUser = !!this.user;
+  const hasOrderingMaster = !!this.orderingMaster;
+  if (hasUser === hasOrderingMaster) {
+    return next(
+      new Error("Order must be placed by exactly one of: user or orderingMaster"),
+    );
+  }
+  next();
+});
 
 const Order = mongoose.model("Order", orderSchema);
 Order.ORDER_STATUSES = ORDER_STATUSES;

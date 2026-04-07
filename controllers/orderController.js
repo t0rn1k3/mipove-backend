@@ -3,12 +3,21 @@ const path = require("path");
 const mongoose = require("mongoose");
 const Order = require("../models/Order");
 const Master = require("../models/Master");
+const { uploadToB2 } = require("../utils/uploadToB2");
 const asyncHandler = require("express-async-handler");
 
 const userSummary = "name email phone image";
+const orderingMasterSummary = "name email phone image slug specialty";
 
 const MAX_ATTACHMENTS = 10;
 const USER_EDITABLE_STATUSES = ["pending"];
+
+function orderDetailQuery(q) {
+  return q
+    .populate("user", userSummary)
+    .populate("orderingMaster", orderingMasterSummary)
+    .populate("master", "name slug image specialty");
+}
 
 function parsePrice(price) {
   if (price == null || price === "") return null;
@@ -34,6 +43,7 @@ function parseScheduledAt(value) {
 
 function attachmentAbsolute(rel) {
   if (!rel || typeof rel !== "string") return null;
+  if (/^https?:\/\//i.test(rel)) return null;
   const clean = rel.replace(/^\//, "");
   return path.join(__dirname, "..", clean);
 }
@@ -48,10 +58,20 @@ function unlinkAttachment(rel) {
   }
 }
 
-function filesToPaths(files) {
-  return (files || [])
-    .filter((f) => f && f.filename)
-    .map((f) => `/uploads/orders/${f.filename}`);
+async function uploadOrderAttachments(files) {
+  const list = (files || []).filter((f) => f && f.buffer);
+  const urls = [];
+  for (const f of list) {
+    urls.push(
+      await uploadToB2(f.buffer, f.originalname, f.mimetype, "orders"),
+    );
+  }
+  return urls;
+}
+
+function wantsOnlyMyOrders(req) {
+  const v = req.query?.mine ?? req.query?.placedByMe;
+  return v === "1" || String(v).toLowerCase() === "true";
 }
 
 const createOrder = asyncHandler(async (req, res) => {
@@ -63,24 +83,34 @@ const createOrder = asyncHandler(async (req, res) => {
     throw err;
   }
 
-  const newPaths = filesToPaths(req.files);
-  if (newPaths.length > MAX_ATTACHMENTS) {
-    newPaths.forEach(unlinkAttachment);
+  if (!["user", "master"].includes(req.user.role)) {
+    const err = new Error("Only users and masters can create orders");
+    err.statusCode = 403;
+    throw err;
+  }
+
+  const incoming = (req.files || []).filter((f) => f && f.buffer);
+  if (incoming.length > MAX_ATTACHMENTS) {
     const err = new Error(`At most ${MAX_ATTACHMENTS} attachment images per order`);
     err.statusCode = 400;
     throw err;
   }
+  const newPaths = await uploadOrderAttachments(req.files);
 
-  const order = await Order.create({
-    user: req.user._id,
+  const base = {
     title: String(title).trim(),
     description: description != null ? String(description).trim() : "",
     scheduledAt: parseScheduledAt(scheduledAt),
     price: parsePrice(price),
     attachments: newPaths,
-  });
+  };
 
-  const populated = await Order.findById(order._id).populate("user", userSummary).lean();
+  const order =
+    req.user.role === "user"
+      ? await Order.create({ ...base, user: req.user._id })
+      : await Order.create({ ...base, orderingMaster: req.user._id });
+
+  const populated = await orderDetailQuery(Order.findById(order._id)).lean();
 
   res.status(201).json({
     success: true,
@@ -91,11 +121,9 @@ const createOrder = asyncHandler(async (req, res) => {
 
 const getOrders = asyncHandler(async (req, res) => {
   if (req.user.role === "user") {
-    const orders = await Order.find({ user: req.user._id })
-      .populate("user", userSummary)
-      .populate("master", "name slug image specialty")
-      .sort({ createdAt: -1 })
-      .lean();
+    const orders = await orderDetailQuery(
+      Order.find({ user: req.user._id }).sort({ createdAt: -1 }),
+    ).lean();
     return res.json({
       success: true,
       count: orders.length,
@@ -104,11 +132,12 @@ const getOrders = asyncHandler(async (req, res) => {
   }
 
   if (req.user.role === "master") {
-    const orders = await Order.find()
-      .populate("user", userSummary)
-      .populate("master", "name slug image specialty")
-      .sort({ createdAt: -1 })
-      .lean();
+    const filter = wantsOnlyMyOrders(req)
+      ? { orderingMaster: req.user._id }
+      : {};
+    const orders = await orderDetailQuery(
+      Order.find(filter).sort({ createdAt: -1 }),
+    ).lean();
     return res.json({
       success: true,
       count: orders.length,
@@ -129,10 +158,7 @@ const getOrderById = asyncHandler(async (req, res) => {
     throw err;
   }
 
-  const order = await Order.findById(id)
-    .populate("user", userSummary)
-    .populate("master", "name slug image specialty")
-    .lean();
+  const order = await orderDetailQuery(Order.findById(id)).lean();
 
   if (!order) {
     const err = new Error("Order not found");
@@ -140,10 +166,13 @@ const getOrderById = asyncHandler(async (req, res) => {
     throw err;
   }
 
-  if (req.user.role === "user" && String(order.user._id) !== String(req.user._id)) {
-    const err = new Error("Not authorized to view this order");
-    err.statusCode = 403;
-    throw err;
+  if (req.user.role === "user") {
+    const uid = order.user && order.user._id ? String(order.user._id) : null;
+    if (!uid || uid !== String(req.user._id)) {
+      const err = new Error("Not authorized to view this order");
+      err.statusCode = 403;
+      throw err;
+    }
   }
 
   if (!["user", "master"].includes(req.user.role)) {
@@ -166,7 +195,20 @@ const updateOrder = asyncHandler(async (req, res) => {
     throw err;
   }
 
-  const order = await Order.findOne({ _id: id, user: req.user._id });
+  const ownerFilter =
+    req.user.role === "user"
+      ? { user: req.user._id }
+      : req.user.role === "master"
+        ? { orderingMaster: req.user._id }
+        : null;
+
+  if (!ownerFilter) {
+    const err = new Error("Not authorized");
+    err.statusCode = 403;
+    throw err;
+  }
+
+  const order = await Order.findOne({ _id: id, ...ownerFilter });
   if (!order) {
     const err = new Error("Order not found");
     err.statusCode = 404;
@@ -203,16 +245,17 @@ const updateOrder = asyncHandler(async (req, res) => {
     update.price = parsePrice(price);
   }
 
-  const newPaths = filesToPaths(req.files);
+  const incoming = (req.files || []).filter((f) => f && f.buffer);
   const existing = Array.isArray(order.attachments) ? order.attachments.length : 0;
-  if (existing + newPaths.length > MAX_ATTACHMENTS) {
-    newPaths.forEach(unlinkAttachment);
+  if (existing + incoming.length > MAX_ATTACHMENTS) {
     const err = new Error(
       `Attachment limit exceeded (max ${MAX_ATTACHMENTS} images per order)`,
     );
     err.statusCode = 400;
     throw err;
   }
+  const newPaths =
+    incoming.length > 0 ? await uploadOrderAttachments(req.files) : [];
   if (newPaths.length) {
     update.attachments = [...(order.attachments || []), ...newPaths];
   }
@@ -223,14 +266,12 @@ const updateOrder = asyncHandler(async (req, res) => {
     throw err;
   }
 
-  const updated = await Order.findByIdAndUpdate(
-    id,
-    update,
-    { new: true, runValidators: true },
-  )
-    .populate("user", userSummary)
-    .populate("master", "name slug image specialty")
-    .lean();
+  const updated = await orderDetailQuery(
+    Order.findByIdAndUpdate(id, update, {
+      new: true,
+      runValidators: true,
+    }),
+  ).lean();
 
   res.json({
     success: true,
@@ -247,7 +288,20 @@ const deleteOrder = asyncHandler(async (req, res) => {
     throw err;
   }
 
-  const order = await Order.findOne({ _id: id, user: req.user._id });
+  const ownerFilter =
+    req.user.role === "user"
+      ? { user: req.user._id }
+      : req.user.role === "master"
+        ? { orderingMaster: req.user._id }
+        : null;
+
+  if (!ownerFilter) {
+    const err = new Error("Not authorized");
+    err.statusCode = 403;
+    throw err;
+  }
+
+  const order = await Order.findOne({ _id: id, ...ownerFilter });
   if (!order) {
     const err = new Error("Order not found");
     err.statusCode = 404;

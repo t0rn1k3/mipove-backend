@@ -19,11 +19,10 @@ const {
   getMasterRatings,
 } = require("../controllers/ratingController");
 const { protect, authorize } = require("../middlewares/auth");
-const portfolioUpload = require("../config/portfolioMulter");
+const { portfolioImagesUpload } = require("../config/memoryMulter");
 
 const handlePortfolioUpload = (req, res, next) => {
-  // field name: images (multiple)
-  portfolioUpload.array("images", 30)(req, res, (err) => {
+  portfolioImagesUpload.array("images", 30)(req, res, (err) => {
     if (err) {
       err.statusCode = 400;
       return next(err);

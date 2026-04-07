@@ -13,8 +13,9 @@ const {
 const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const orderUserSummary = "name email phone image";
+const orderOrderingMasterSummary = "name email phone image slug specialty";
 
-// @desc    List orders this master saved as favourites (user orders)
+// @desc    List orders this master saved as favourites
 // @route   GET /api/masters/me/favorite-orders
 // @access  Private (master)
 const getMyFavoriteOrders = asyncHandler(async (req, res) => {
@@ -27,6 +28,7 @@ const getMyFavoriteOrders = asyncHandler(async (req, res) => {
   const ids = master.favoriteOrders || [];
   const orders = await Order.find({ _id: { $in: ids } })
     .populate("user", orderUserSummary)
+    .populate("orderingMaster", orderOrderingMasterSummary)
     .populate("master", "name slug image specialty")
     .sort({ createdAt: -1 })
     .lean();
@@ -38,7 +40,7 @@ const getMyFavoriteOrders = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Add a user order to this master's favourites
+// @desc    Add an order to this master's favourites
 // @route   POST /api/masters/me/favorite-orders
 // @access  Private (master)
 // Body: { "orderId": "<ObjectId>" }
@@ -171,11 +173,16 @@ const addPortfolioImages = asyncHandler(async (req, res) => {
     throw err;
   }
 
-  const newPaths = files
-    .filter((f) => f && f.filename)
-    .map((f) => `/uploads/portfolio/${f.filename}`);
+  const newUrls = [];
+  for (const f of files) {
+    if (f && f.buffer) {
+      newUrls.push(
+        await uploadToB2(f.buffer, f.originalname, f.mimetype, "portfolio"),
+      );
+    }
+  }
 
-  master.portfolioImages = [...(master.portfolioImages || []), ...newPaths];
+  master.portfolioImages = [...(master.portfolioImages || []), ...newUrls];
   await master.save();
 
   const data = master.toObject();
@@ -324,6 +331,7 @@ const createMaster = asyncHandler(async (req, res) => {
     rest.specialty = v.specialty;
   }
   const slugify = require("../utils/slugify");
+const { uploadToB2 } = require("../utils/uploadToB2");
   const { hashPassword } = require("../utils/helpers");
   const existing = await Master.findOne({ email: email.toLowerCase().trim() });
   if (existing) {
