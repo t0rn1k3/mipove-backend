@@ -3,6 +3,7 @@ const router = express.Router();
 const { protect, authorize } = require("../middlewares/auth");
 const { orderAttachmentsUpload } = require("../config/memoryMulter");
 const {
+  getOrderCategories,
   createOrder,
   getOrders,
   getOrderById,
@@ -23,6 +24,8 @@ const optionalOrderFiles = (req, res, next) => {
   }
   next();
 };
+
+router.get("/categories", getOrderCategories);
 
 router
   .route("/")

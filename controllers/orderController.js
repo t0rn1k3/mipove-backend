@@ -10,6 +10,7 @@ const {
   applyMasterContactGateToOrders,
 } = require("../utils/orderContactGate");
 const asyncHandler = require("express-async-handler");
+const { ORDER_CATEGORIES, validateOrderCategory } = require("../config/orderCategories");
 
 const userSummary = "name email phone image";
 const orderingMasterSummary = "name email phone image slug specialty";
@@ -79,8 +80,19 @@ function wantsOnlyMyOrders(req) {
   return v === "1" || String(v).toLowerCase() === "true";
 }
 
+// @desc    List order categories for filters (marketplace)
+// @route   GET /api/orders/categories
+// @access  Public
+const getOrderCategories = asyncHandler(async (req, res) => {
+  res.json({
+    success: true,
+    categories: ORDER_CATEGORIES,
+  });
+});
+
 const createOrder = asyncHandler(async (req, res) => {
-  const { title, description, scheduledAt, price } = req.body || {};
+  const { title, description, scheduledAt, price, category: categoryRaw } =
+    req.body || {};
 
   if (!title || !String(title).trim()) {
     const err = new Error("Please provide a title for the order");
@@ -110,6 +122,16 @@ const createOrder = asyncHandler(async (req, res) => {
     attachments: newPaths,
   };
 
+  if (categoryRaw !== undefined) {
+    const catResult = validateOrderCategory(categoryRaw);
+    if (!catResult.ok) {
+      const err = new Error(catResult.message);
+      err.statusCode = 400;
+      throw err;
+    }
+    base.category = catResult.category;
+  }
+
   const order =
     req.user.role === "user"
       ? await Order.create({ ...base, user: req.user._id })
@@ -129,9 +151,25 @@ const createOrder = asyncHandler(async (req, res) => {
 });
 
 const getOrders = asyncHandler(async (req, res) => {
+  const categoryParam = req.query.category;
+  let categoryFilter = {};
+  if (categoryParam != null && String(categoryParam).trim()) {
+    const catResult = validateOrderCategory(categoryParam);
+    if (!catResult.ok) {
+      const err = new Error(catResult.message);
+      err.statusCode = 400;
+      throw err;
+    }
+    if (catResult.category) {
+      categoryFilter = { category: catResult.category };
+    }
+  }
+
   if (req.user.role === "user") {
     const orders = await orderDetailQuery(
-      Order.find({ user: req.user._id }).sort({ createdAt: -1 }),
+      Order.find({ user: req.user._id, ...categoryFilter }).sort({
+        createdAt: -1,
+      }),
     ).lean();
     return res.json({
       success: true,
@@ -142,8 +180,8 @@ const getOrders = asyncHandler(async (req, res) => {
 
   if (req.user.role === "master") {
     const filter = wantsOnlyMyOrders(req)
-      ? { orderingMaster: req.user._id }
-      : {};
+      ? { orderingMaster: req.user._id, ...categoryFilter }
+      : { ...categoryFilter };
     const orders = await orderDetailQuery(
       Order.find(filter).sort({ createdAt: -1 }),
     ).lean();
@@ -241,7 +279,8 @@ const updateOrder = asyncHandler(async (req, res) => {
     throw err;
   }
 
-  const { title, description, scheduledAt, price } = req.body || {};
+  const { title, description, scheduledAt, price, category: categoryRaw } =
+    req.body || {};
   const update = {};
 
   if (title !== undefined) {
@@ -261,6 +300,15 @@ const updateOrder = asyncHandler(async (req, res) => {
   }
   if (price !== undefined) {
     update.price = parsePrice(price);
+  }
+  if (categoryRaw !== undefined) {
+    const catResult = validateOrderCategory(categoryRaw);
+    if (!catResult.ok) {
+      const err = new Error(catResult.message);
+      err.statusCode = 400;
+      throw err;
+    }
+    update.category = catResult.category;
   }
 
   const incoming = (req.files || []).filter((f) => f && f.buffer);
@@ -344,6 +392,7 @@ const deleteOrder = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
+  getOrderCategories,
   createOrder,
   getOrders,
   getOrderById,

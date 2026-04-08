@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { ORDER_CATEGORY_ID_SET } = require("../config/orderCategories");
 
 const ORDER_STATUSES = ["pending", "accepted", "in_progress", "completed", "cancelled"];
 
@@ -37,6 +38,18 @@ const orderSchema = new mongoose.Schema(
     attachments: {
       type: [String],
       default: [],
+    },
+    /** Smart-filter category (see GET /api/orders/categories) */
+    category: {
+      type: String,
+      default: null,
+      index: true,
+      validate: {
+        validator(v) {
+          return v == null || ORDER_CATEGORY_ID_SET.has(v);
+        },
+        message: "Invalid order category",
+      },
     },
   },
   { timestamps: true, collection: "orders" }
