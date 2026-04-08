@@ -55,15 +55,12 @@ const orderSchema = new mongoose.Schema(
   { timestamps: true, collection: "orders" }
 );
 
-orderSchema.pre("validate", function (next) {
+orderSchema.pre("validate", function () {
   const hasUser = !!this.user;
   const hasOrderingMaster = !!this.orderingMaster;
   if (hasUser === hasOrderingMaster) {
-    return next(
-      new Error("Order must be placed by exactly one of: user or orderingMaster"),
-    );
+    throw new Error("Order must be placed by exactly one of: user or orderingMaster");
   }
-  next();
 });
 
 const Order = mongoose.model("Order", orderSchema);
