@@ -10,6 +10,7 @@ const {
   getSpecialtyLabel,
 } = require("../config/masterProfessions");
 const { uploadToB2, deleteFromB2ByPublicUrl } = require("../utils/uploadToB2");
+const { applyMasterContactGateToOrders } = require("../utils/orderContactGate");
 const { hashPassword } = require("../utils/helpers");
 
 const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
