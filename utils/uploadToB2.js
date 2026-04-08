@@ -1,4 +1,4 @@
-const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
+const { S3Client, PutObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
 const { randomUUID } = require("crypto");
 
 const required = (name) => {
@@ -77,4 +77,63 @@ async function uploadToB2(buffer, originalName, contentType, folder) {
   return `${getPublicBaseUrl()}/${key}`;
 }
 
-module.exports = { uploadToB2 };
+/**
+ * Map a public object URL back to the S3 key (must be under uploads/portfolio/).
+ * @param {string} publicUrl
+ * @returns {string | null}
+ */
+function publicPortfolioUrlToKey(publicUrl) {
+  const u = String(publicUrl || "").trim();
+  if (!u) return null;
+  const base = getPublicBaseUrl().replace(/\/+$/, "");
+  let key = null;
+  if (u.startsWith(`${base}/`)) {
+    key = u.slice(base.length + 1);
+  } else {
+    try {
+      const parsed = new URL(u);
+      const path = parsed.pathname.replace(/^\/+/, "");
+      if (path.startsWith("uploads/portfolio/")) {
+        key = path;
+      }
+    } catch {
+      /* invalid URL */
+    }
+  }
+  if (!key || !/^uploads\/portfolio\/[^/]+$/i.test(key)) {
+    return null;
+  }
+  return key;
+}
+
+/**
+ * Delete a portfolio object from B2 (idempotent if key already gone).
+ * @param {string} publicUrl - Full URL as stored in Master.portfolioImages
+ */
+async function deleteFromB2ByPublicUrl(publicUrl) {
+  const key = publicPortfolioUrlToKey(publicUrl);
+  if (!key) {
+    const err = new Error("Invalid or unrecognized portfolio image URL");
+    err.statusCode = 400;
+    throw err;
+  }
+  try {
+    await s3.send(
+      new DeleteObjectCommand({
+        Bucket: b2Bucket,
+        Key: key,
+      }),
+    );
+  } catch (e) {
+    const code = e.name || e.Code || "S3Error";
+    const detail = e.message || String(e);
+    const wrapped = new Error(`B2 delete failed [${code}]: ${detail}`);
+    wrapped.statusCode = 502;
+    if (process.env.NODE_ENV === "development") {
+      wrapped.stack = e.stack;
+    }
+    throw wrapped;
+  }
+}
+
+module.exports = { uploadToB2, deleteFromB2ByPublicUrl, publicPortfolioUrlToKey };

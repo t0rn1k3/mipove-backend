@@ -9,6 +9,8 @@ const {
   validateSpecialty,
   getSpecialtyLabel,
 } = require("../config/masterProfessions");
+const { uploadToB2, deleteFromB2ByPublicUrl } = require("../utils/uploadToB2");
+const { hashPassword } = require("../utils/helpers");
 
 const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -197,6 +199,72 @@ const addPortfolioImages = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Remove portfolio image(s) from B2 and from this master
+// @route   DELETE /api/masters/me/portfolio
+// @access  Private (master)
+// Body:   { url: string } or { urls: string[] } — exact URLs as returned by GET /me/portfolio
+const removePortfolioImages = asyncHandler(async (req, res) => {
+  const { url: rawUrl, urls: rawUrls } = req.body || {};
+  let toRemove = [];
+  if (Array.isArray(rawUrls) && rawUrls.length) {
+    toRemove = rawUrls
+      .map((u) => (typeof u === "string" ? u.trim() : ""))
+      .filter(Boolean);
+  } else if (rawUrl != null && typeof rawUrl === "string" && rawUrl.trim()) {
+    toRemove = [rawUrl.trim()];
+  } else {
+    const err = new Error('Body must include "url" or non-empty "urls" array');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const seen = new Set();
+  toRemove = toRemove.filter((u) => {
+    if (seen.has(u)) return false;
+    seen.add(u);
+    return true;
+  });
+
+  const master = await Master.findById(req.user._id);
+  if (!master) {
+    const err = new Error("Master not found");
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const current = Array.isArray(master.portfolioImages)
+    ? [...master.portfolioImages]
+    : [];
+
+  for (const u of toRemove) {
+    if (!current.includes(u)) {
+      const err = new Error("Image URL not found in your portfolio");
+      err.statusCode = 404;
+      throw err;
+    }
+  }
+
+  for (const u of toRemove) {
+    await deleteFromB2ByPublicUrl(u);
+  }
+
+  const removeSet = new Set(toRemove);
+  master.portfolioImages = current.filter((x) => !removeSet.has(x));
+  await master.save();
+
+  const data = master.toObject();
+  delete data.password;
+
+  res.json({
+    success: true,
+    data,
+    message:
+      toRemove.length === 1
+        ? "Portfolio image removed"
+        : `${toRemove.length} portfolio images removed`,
+  });
+});
+
 // @desc    Get all masters (public list, non-blocked only)
 // @route   GET /api/masters
 // @access  Public
@@ -333,9 +401,6 @@ const createMaster = asyncHandler(async (req, res) => {
     rest.specialty = v.specialty;
   }
   const slugify = require("../utils/slugify");
-const { applyMasterContactGateToOrders } = require("../utils/orderContactGate");
-const { uploadToB2 } = require("../utils/uploadToB2");
-  const { hashPassword } = require("../utils/helpers");
   const existing = await Master.findOne({ email: email.toLowerCase().trim() });
   if (existing) {
     const err = new Error("Master with this email already exists");
@@ -429,6 +494,7 @@ module.exports = {
   deleteMaster,
   getMyPortfolio,
   addPortfolioImages,
+  removePortfolioImages,
   getMyFavoriteOrders,
   addFavoriteOrder,
   removeFavoriteOrder,

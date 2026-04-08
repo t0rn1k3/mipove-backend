@@ -9,6 +9,7 @@ const {
   deleteMaster,
   getMyPortfolio,
   addPortfolioImages,
+  removePortfolioImages,
   getMyFavoriteOrders,
   addFavoriteOrder,
   removeFavoriteOrder,
@@ -40,7 +41,8 @@ router
   .get(protect, authorize("master"), getMyPortfolio)
   // allow either POST or PATCH for appends
   .post(protect, authorize("master"), handlePortfolioUpload, addPortfolioImages)
-  .patch(protect, authorize("master"), handlePortfolioUpload, addPortfolioImages);
+  .patch(protect, authorize("master"), handlePortfolioUpload, addPortfolioImages)
+  .delete(protect, authorize("master"), removePortfolioImages);
 
 router
   .route("/me/favorite-orders")
