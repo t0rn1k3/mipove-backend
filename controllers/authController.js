@@ -26,7 +26,22 @@ const issueAuthCookies = (res, id, role) => {
   const refreshToken = generateToken(id, role, { tokenType: "refresh" });
   setAuthCookie(res, accessToken);
   setRefreshCookie(res, refreshToken);
+  return { accessToken, refreshToken };
 };
+
+/** When true, JSON responses include accessToken for Authorization: Bearer (helps SPA on another port where cookies may not attach). */
+function shouldReturnAccessTokenInBody() {
+  const explicit = process.env.AUTH_RETURN_ACCESS_TOKEN;
+  if (explicit != null && String(explicit).trim() !== "") {
+    return String(explicit).toLowerCase() === "true";
+  }
+  return process.env.NODE_ENV === "development";
+}
+
+function exposeAccessTokenPayload(accessToken) {
+  if (!shouldReturnAccessTokenInBody() || !accessToken) return {};
+  return { accessToken };
+}
 
 // @desc    Register user (normal client)
 // @route   POST /api/auth/users/register
@@ -58,7 +73,7 @@ const registerUser = asyncHandler(async (req, res) => {
     role: "user",
   });
 
-  issueAuthCookies(res, user._id, "user");
+  const tokens = issueAuthCookies(res, user._id, "user");
 
   res.status(201).json({
     success: true,
@@ -71,6 +86,7 @@ const registerUser = asyncHandler(async (req, res) => {
       image: user.image || "",
     },
     message: "Registered successfully",
+    ...exposeAccessTokenPayload(tokens.accessToken),
   });
 });
 
@@ -113,7 +129,7 @@ const registerAdmin = asyncHandler(async (req, res) => {
     password: hashedPassword,
   });
 
-  issueAuthCookies(res, admin._id, "admin");
+  const tokens = issueAuthCookies(res, admin._id, "admin");
 
   res.status(201).json({
     success: true,
@@ -126,6 +142,7 @@ const registerAdmin = asyncHandler(async (req, res) => {
       image: admin.image || "",
     },
     message: "Registered successfully",
+    ...exposeAccessTokenPayload(tokens.accessToken),
   });
 });
 
@@ -181,7 +198,7 @@ const registerMaster = asyncHandler(async (req, res) => {
     action: "registration_bonus",
   });
 
-  issueAuthCookies(res, master._id, "master");
+  const tokens = issueAuthCookies(res, master._id, "master");
 
   res.status(201).json({
     success: true,
@@ -196,6 +213,7 @@ const registerMaster = asyncHandler(async (req, res) => {
       credits: master.credits,
     },
     message: "Registered successfully",
+    ...exposeAccessTokenPayload(tokens.accessToken),
   });
 });
 
@@ -225,7 +243,7 @@ const login = asyncHandler(async (req, res) => {
       err.statusCode = 401;
       throw err;
     }
-    issueAuthCookies(res, user._id, "user");
+    const tokens = issueAuthCookies(res, user._id, "user");
     return res.json({
       success: true,
       data: {
@@ -237,6 +255,7 @@ const login = asyncHandler(async (req, res) => {
         image: user.image || "",
       },
       message: "Logged in successfully",
+      ...exposeAccessTokenPayload(tokens.accessToken),
     });
   }
 
@@ -255,7 +274,7 @@ const login = asyncHandler(async (req, res) => {
       err.statusCode = 401;
       throw err;
     }
-    issueAuthCookies(res, master._id, "master");
+    const tokens = issueAuthCookies(res, master._id, "master");
     return res.json({
       success: true,
       data: {
@@ -268,6 +287,7 @@ const login = asyncHandler(async (req, res) => {
         slug: master.slug,
       },
       message: "Logged in successfully",
+      ...exposeAccessTokenPayload(tokens.accessToken),
     });
   }
 
@@ -357,6 +377,7 @@ const refresh = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     message: "Access token refreshed",
+    ...exposeAccessTokenPayload(accessToken),
   });
 });
 

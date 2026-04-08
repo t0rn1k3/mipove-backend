@@ -31,6 +31,11 @@ const userSchema = new mongoose.Schema(
       default: "",
       trim: true,
     },
+    /** Orders placed by this customer (denormalized; same as Order.user) */
+    orders: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: "Order" }],
+      default: [],
+    },
   },
   { timestamps: true }
 );

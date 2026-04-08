@@ -3,6 +3,7 @@ const path = require("path");
 const mongoose = require("mongoose");
 const Order = require("../models/Order");
 const Master = require("../models/Master");
+const User = require("../models/User");
 const { uploadToB2 } = require("../utils/uploadToB2");
 const {
   loadContactUnlockedSet,
@@ -136,6 +137,12 @@ const createOrder = asyncHandler(async (req, res) => {
     req.user.role === "user"
       ? await Order.create({ ...base, user: req.user._id })
       : await Order.create({ ...base, orderingMaster: req.user._id });
+
+  if (req.user.role === "user") {
+    await User.findByIdAndUpdate(req.user._id, {
+      $addToSet: { orders: order._id },
+    });
+  }
 
   let data = await orderDetailQuery(Order.findById(order._id)).lean();
   if (req.user.role === "master") {
@@ -382,6 +389,9 @@ const deleteOrder = asyncHandler(async (req, res) => {
 
   (order.attachments || []).forEach(unlinkAttachment);
   await Master.updateMany({ favoriteOrders: id }, { $pull: { favoriteOrders: id } });
+  if (req.user.role === "user") {
+    await User.findByIdAndUpdate(req.user._id, { $pull: { orders: id } });
+  }
   await Order.deleteOne({ _id: id });
 
   res.json({
