@@ -48,6 +48,95 @@ function parseScheduledAt(value) {
   return d;
 }
 
+function parseNonNegativeNumber(value, fieldName) {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) {
+    const err = new Error(`${fieldName} must be a non-negative number`);
+    err.statusCode = 400;
+    throw err;
+  }
+  return n;
+}
+
+function parseLocation(raw) {
+  if (raw === undefined) return undefined;
+  if (raw === null || raw === "") {
+    return { city: "", addressText: "", lat: null, lng: null };
+  }
+  let obj = raw;
+  if (typeof raw === "string") {
+    try {
+      obj = JSON.parse(raw);
+    } catch {
+      const err = new Error("location must be a valid JSON object");
+      err.statusCode = 400;
+      throw err;
+    }
+  }
+  if (!obj || typeof obj !== "object") {
+    const err = new Error("location must be an object");
+    err.statusCode = 400;
+    throw err;
+  }
+  const city = obj.city != null ? String(obj.city).trim() : "";
+  const addressText = obj.addressText != null ? String(obj.addressText).trim() : "";
+  const lat = parseNonNegativeOrSigned(obj.lat, "location.lat");
+  const lng = parseNonNegativeOrSigned(obj.lng, "location.lng");
+  return { city, addressText, lat, lng };
+}
+
+function parseNonNegativeOrSigned(value, fieldName) {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  if (!Number.isFinite(n)) {
+    const err = new Error(`${fieldName} must be a valid number`);
+    err.statusCode = 400;
+    throw err;
+  }
+  return n;
+}
+
+function parseBudget(raw, fallbackCurrency = "GEL") {
+  if (raw === undefined) return undefined;
+  if (raw === null || raw === "") {
+    return { min: null, max: null, currency: fallbackCurrency };
+  }
+  let obj = raw;
+  if (typeof raw === "string") {
+    try {
+      obj = JSON.parse(raw);
+    } catch {
+      const err = new Error("budget must be a valid JSON object");
+      err.statusCode = 400;
+      throw err;
+    }
+  }
+  if (!obj || typeof obj !== "object") {
+    const err = new Error("budget must be an object");
+    err.statusCode = 400;
+    throw err;
+  }
+  const min = parseNonNegativeNumber(obj.min, "budget.min");
+  const max = parseNonNegativeNumber(obj.max, "budget.max");
+  if (min != null && max != null && max < min) {
+    const err = new Error("budget.max must be greater than or equal to budget.min");
+    err.statusCode = 400;
+    throw err;
+  }
+  const currency =
+    obj.currency != null && String(obj.currency).trim()
+      ? String(obj.currency).trim().toUpperCase()
+      : fallbackCurrency;
+  return { min, max, currency };
+}
+
+function parseCategoriesInput(body) {
+  if (!body || typeof body !== "object") return undefined;
+  if (body.categories !== undefined) return body.categories;
+  return body.category;
+}
+
 function attachmentAbsolute(rel) {
   if (!rel || typeof rel !== "string") return null;
   if (/^https?:\/\//i.test(rel)) return null;
@@ -92,8 +181,16 @@ const getOrderCategories = asyncHandler(async (req, res) => {
 });
 
 const createOrder = asyncHandler(async (req, res) => {
-  const { title, description, scheduledAt, price, category: categoryRaw } =
+  const {
+    title,
+    description,
+    scheduledAt,
+    price,
+    budget: budgetRaw,
+    location: locationRaw,
+  } =
     req.body || {};
+  const categoryRaw = parseCategoriesInput(req.body || {});
 
   if (!title || !String(title).trim()) {
     const err = new Error("Please provide a title for the order");
@@ -120,6 +217,8 @@ const createOrder = asyncHandler(async (req, res) => {
     description: description != null ? String(description).trim() : "",
     scheduledAt: parseScheduledAt(scheduledAt),
     price: parsePrice(price),
+    budget: parseBudget(budgetRaw),
+    location: parseLocation(locationRaw),
     attachments: newPaths,
   };
 
@@ -130,13 +229,21 @@ const createOrder = asyncHandler(async (req, res) => {
       err.statusCode = 400;
       throw err;
     }
-    base.category = catResult.category;
+    base.categories = catResult.category;
   }
 
   const order =
     req.user.role === "user"
       ? await Order.create({ ...base, user: req.user._id })
       : await Order.create({ ...base, orderingMaster: req.user._id });
+
+  if (req.user?.name) {
+    order.customerNameSnapshot = String(req.user.name);
+  }
+  if (req.user?.phone != null) {
+    order.customerPhoneSnapshot = String(req.user.phone || "");
+  }
+  await order.save();
 
   if (req.user.role === "user") {
     await User.findByIdAndUpdate(req.user._id, {
@@ -158,7 +265,7 @@ const createOrder = asyncHandler(async (req, res) => {
 });
 
 const getOrders = asyncHandler(async (req, res) => {
-  const categoryParam = req.query.category;
+  const categoryParam = req.query.categories ?? req.query.category;
   let categoryFilter = {};
   if (categoryParam != null && String(categoryParam).trim()) {
     const catResult = validateOrderCategory(categoryParam);
@@ -168,7 +275,7 @@ const getOrders = asyncHandler(async (req, res) => {
       throw err;
     }
     if (catResult.category && catResult.category.length) {
-      categoryFilter = { category: { $in: catResult.category } };
+      categoryFilter = { categories: { $in: catResult.category } };
     }
   }
 
@@ -286,8 +393,15 @@ const updateOrder = asyncHandler(async (req, res) => {
     throw err;
   }
 
-  const { title, description, scheduledAt, price, category: categoryRaw } =
-    req.body || {};
+  const {
+    title,
+    description,
+    scheduledAt,
+    price,
+    budget: budgetRaw,
+    location: locationRaw,
+  } = req.body || {};
+  const categoryRaw = parseCategoriesInput(req.body || {});
   const update = {};
 
   if (title !== undefined) {
@@ -308,6 +422,12 @@ const updateOrder = asyncHandler(async (req, res) => {
   if (price !== undefined) {
     update.price = parsePrice(price);
   }
+  if (budgetRaw !== undefined) {
+    update.budget = parseBudget(budgetRaw);
+  }
+  if (locationRaw !== undefined) {
+    update.location = parseLocation(locationRaw);
+  }
   if (categoryRaw !== undefined) {
     const catResult = validateOrderCategory(categoryRaw);
     if (!catResult.ok) {
@@ -315,7 +435,7 @@ const updateOrder = asyncHandler(async (req, res) => {
       err.statusCode = 400;
       throw err;
     }
-    update.category = catResult.category;
+    update.categories = catResult.category;
   }
 
   const incoming = (req.files || []).filter((f) => f && f.buffer);

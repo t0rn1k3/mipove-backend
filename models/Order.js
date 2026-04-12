@@ -40,7 +40,7 @@ const orderSchema = new mongoose.Schema(
       default: [],
     },
     /** Smart-filter categories (see GET /api/orders/categories) */
-    category: {
+    categories: {
       type: [String],
       default: [],
       index: true,
@@ -52,6 +52,22 @@ const orderSchema = new mongoose.Schema(
         message: "Invalid order category list",
       },
     },
+    /** Free/structured location from order submission form */
+    location: {
+      city: { type: String, trim: true, default: "" },
+      addressText: { type: String, trim: true, default: "" },
+      lat: { type: Number, default: null },
+      lng: { type: Number, default: null },
+    },
+    /** Budget range from order submission form */
+    budget: {
+      min: { type: Number, min: 0, default: null },
+      max: { type: Number, min: 0, default: null },
+      currency: { type: String, trim: true, default: "GEL" },
+    },
+    /** Customer contact snapshot at submission time */
+    customerNameSnapshot: { type: String, trim: true, default: "" },
+    customerPhoneSnapshot: { type: String, trim: true, default: "" },
   },
   { timestamps: true, collection: "orders" }
 );
@@ -61,6 +77,14 @@ orderSchema.pre("validate", function () {
   const hasOrderingMaster = !!this.orderingMaster;
   if (hasUser === hasOrderingMaster) {
     throw new Error("Order must be placed by exactly one of: user or orderingMaster");
+  }
+  if (
+    this.budget &&
+    this.budget.min != null &&
+    this.budget.max != null &&
+    this.budget.max < this.budget.min
+  ) {
+    throw new Error("budget.max must be greater than or equal to budget.min");
   }
 });
 
