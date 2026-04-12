@@ -33,35 +33,47 @@ const labelById = Object.fromEntries(
 
 /**
  * @param {unknown} value
- * @returns {string | null | undefined} normalized id, null to clear, undefined if not provided
+ * @returns {string | undefined} normalized id
  */
-function normalizeOrderCategoryInput(value) {
-  if (value === undefined) return undefined;
-  if (value === null || value === "") return null;
+function normalizeCategoryId(value) {
+  if (value == null) return undefined;
   let s = String(value).trim().toLowerCase();
   s = s.replace(/\s*&\s*/g, "_").replace(/\s+/g, "_").replace(/_+/g, "_");
-  return s === "" ? null : s;
+  return s === "" ? undefined : s;
 }
 
 /**
- * @param {unknown} value - raw from client (omit = unchanged on update)
- * @returns {{ ok: true, category: string | null | undefined } | { ok: false, message: string }}
+ * Accepts:
+ * - undefined (means "unchanged" for update)
+ * - null / "" (clear all categories)
+ * - "wood" (single category)
+ * - "wood,metal" (comma-separated)
+ * - ["wood", "metal"] (multi-select)
+ *
+ * @param {unknown} value
+ * @returns {{ ok: true, category: string[] | undefined } | { ok: false, message: string }}
  */
 function validateOrderCategory(value) {
-  if (value === undefined) {
-    return { ok: true, category: undefined };
-  }
-  const normalized = normalizeOrderCategoryInput(value);
-  if (normalized === null) {
-    return { ok: true, category: null };
-  }
-  if (!ORDER_CATEGORY_ID_SET.has(normalized)) {
+  if (value === undefined) return { ok: true, category: undefined };
+  if (value === null || value === "") return { ok: true, category: [] };
+
+  const rawList = Array.isArray(value)
+    ? value
+    : String(value).split(",");
+
+  const normalized = rawList
+    .map(normalizeCategoryId)
+    .filter(Boolean);
+
+  const deduped = [...new Set(normalized)];
+  const invalid = deduped.filter((id) => !ORDER_CATEGORY_ID_SET.has(id));
+  if (invalid.length) {
     return {
       ok: false,
       message: `Invalid category. Use one of: ${ORDER_CATEGORY_IDS.join(", ")}`,
     };
   }
-  return { ok: true, category: normalized };
+  return { ok: true, category: deduped };
 }
 
 function getOrderCategoryLabel(categoryId) {

@@ -167,8 +167,8 @@ const getOrders = asyncHandler(async (req, res) => {
       err.statusCode = 400;
       throw err;
     }
-    if (catResult.category) {
-      categoryFilter = { category: catResult.category };
+    if (catResult.category && catResult.category.length) {
+      categoryFilter = { category: { $in: catResult.category } };
     }
   }
 

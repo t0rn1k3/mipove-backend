@@ -39,16 +39,17 @@ const orderSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
-    /** Smart-filter category (see GET /api/orders/categories) */
+    /** Smart-filter categories (see GET /api/orders/categories) */
     category: {
-      type: String,
-      default: null,
+      type: [String],
+      default: [],
       index: true,
       validate: {
         validator(v) {
-          return v == null || ORDER_CATEGORY_ID_SET.has(v);
+          if (!Array.isArray(v)) return false;
+          return v.every((id) => ORDER_CATEGORY_ID_SET.has(id));
         },
-        message: "Invalid order category",
+        message: "Invalid order category list",
       },
     },
   },
