@@ -1,5 +1,17 @@
 const mongoose = require("mongoose");
 
+const userOrderRefSchema = new mongoose.Schema(
+  {
+    orderId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Order",
+      required: true,
+    },
+    title: { type: String, trim: true, default: "" },
+  },
+  { _id: false },
+);
+
 const userSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
@@ -31,9 +43,9 @@ const userSchema = new mongoose.Schema(
       default: "",
       trim: true,
     },
-    /** Orders placed by this customer (denormalized; same as Order.user) */
+    /** Orders placed by this customer (denormalized id + title; source of truth is Order collection) */
     orders: {
-      type: [{ type: mongoose.Schema.Types.ObjectId, ref: "Order" }],
+      type: [userOrderRefSchema],
       default: [],
     },
   },

@@ -9,6 +9,8 @@
     "dev": "nodemon server.js",
     "create-admin": "node scripts/create-admin.js",
     "seed:credit-packs": "node scripts/seedCreditPacks.js",
+    "migrate:user-orders": "node scripts/migrateUserOrderRefs.js",
+    "migrate:user-orders:prune": "node scripts/migrateUserOrderRefs.js --prune",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

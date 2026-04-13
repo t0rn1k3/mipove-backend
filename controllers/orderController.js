@@ -174,6 +174,13 @@ function wantsOnlyMyOrders(req) {
   return v === "1" || String(v).toLowerCase() === "true";
 }
 
+/** Remove denormalized order ref from customer profile (new shape + legacy ObjectId[]). */
+async function pullUserOrderRef(userId, orderIdStr) {
+  const oid = new mongoose.Types.ObjectId(orderIdStr);
+  await User.updateOne({ _id: userId }, { $pull: { orders: { orderId: oid } } });
+  await User.updateOne({ _id: userId }, { $pull: { orders: oid } });
+}
+
 function parseOrdersPagination(req) {
   const hasLimit = Object.prototype.hasOwnProperty.call(req.query, "limit");
   const hasOffset = Object.prototype.hasOwnProperty.call(req.query, "offset");
@@ -353,7 +360,9 @@ const createOrder = asyncHandler(async (req, res) => {
 
   if (req.user.role === "user") {
     await User.findByIdAndUpdate(req.user._id, {
-      $addToSet: { orders: order._id },
+      $push: {
+        orders: { orderId: order._id, title: order.title },
+      },
     });
   }
 
@@ -621,6 +630,13 @@ const updateOrder = asyncHandler(async (req, res) => {
     }),
   ).lean();
 
+  if (req.user.role === "user" && update.title !== undefined) {
+    await User.updateOne(
+      { _id: req.user._id, "orders.orderId": new mongoose.Types.ObjectId(id) },
+      { $set: { "orders.$.title": update.title } },
+    );
+  }
+
   let data = updated;
   if (req.user.role === "master") {
     const unlockedSet = await loadContactUnlockedSet(req.user._id, [String(updated._id)]);
@@ -674,7 +690,7 @@ const deleteOrder = asyncHandler(async (req, res) => {
   await Master.updateMany({ favoriteOrders: id }, { $pull: { favoriteOrders: id } });
   await CreditUnlock.deleteMany({ targetId: String(id) });
   if (req.user.role === "user") {
-    await User.findByIdAndUpdate(req.user._id, { $pull: { orders: id } });
+    await pullUserOrderRef(req.user._id, id);
   }
   await Order.deleteOne({ _id: id });
 
