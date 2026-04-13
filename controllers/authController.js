@@ -3,6 +3,7 @@ const User = require("../models/User");
 const Master = require("../models/Master");
 const Admin = require("../models/Admin");
 const Rating = require("../models/Rating");
+const { buildRatedMastersForUser } = require("./ratingController");
 const slugify = require("../utils/slugify");
 const asyncHandler = require("express-async-handler");
 const generateToken = require("../utils/generateToken");
@@ -68,33 +69,6 @@ async function getMasterRatingStats(masterId) {
   return { average: 0, count: 0 };
 }
 
-/** Masters the client has rated (flat shape for frontend RatedMasterItem). */
-async function getRatedMastersForUser(userId) {
-  const ratings = await Rating.find({
-    raterId: userId,
-    raterType: "User",
-  })
-    .populate("master", "name slug image specialty location")
-    .sort({ updatedAt: -1 })
-    .lean();
-
-  return ratings
-    .filter((r) => r.master)
-    .map((r) => {
-      const m = r.master;
-      return {
-        _id: m._id,
-        name: m.name,
-        slug: m.slug || "",
-        image: m.image || "",
-        specialty: m.specialty || "",
-        location: m.location || "",
-        stars: r.stars,
-        ratedAt: r.updatedAt || r.createdAt,
-      };
-    });
-}
-
 /** Normalized profile for GET/PATCH /api/auth/me (and profile aliases). */
 async function buildMePayload(doc, role) {
   const raw = doc && (doc.toObject ? doc.toObject() : { ...doc });
@@ -102,7 +76,7 @@ async function buildMePayload(doc, role) {
 
   if (role === "user") {
     delete raw.orders;
-    const ratedMasters = await getRatedMastersForUser(raw._id);
+    const ratedMasters = await buildRatedMastersForUser(raw._id);
     return {
       _id: raw._id,
       name: raw.name,

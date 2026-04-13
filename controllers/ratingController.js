@@ -2,17 +2,60 @@ const Rating = require("../models/Rating");
 const Master = require("../models/Master");
 const asyncHandler = require("express-async-handler");
 
+async function aggregateMasterRating(masterId) {
+  const stats = await Rating.aggregate([
+    { $match: { master: masterId } },
+    {
+      $group: {
+        _id: null,
+        average: { $avg: "$stars" },
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+  if (stats[0]) {
+    return {
+      average: Math.round(stats[0].average * 10) / 10,
+      count: stats[0].count,
+    };
+  }
+  return { average: 0, count: 0 };
+}
+
+async function buildRatedMastersForUser(userId) {
+  const ratings = await Rating.find({ raterId: userId, raterType: "User" })
+    .populate("master", "name slug image specialty location")
+    .sort({ updatedAt: -1 })
+    .lean();
+
+  return ratings
+    .filter((r) => r.master)
+    .map((r) => ({
+      master: {
+        _id: r.master._id,
+        name: r.master.name,
+        slug: r.master.slug || "",
+        image: r.master.image || "",
+        specialty: r.master.specialty || "",
+        location: r.master.location || "",
+      },
+      stars: r.stars,
+      ratedAt: r.updatedAt || r.createdAt,
+    }));
+}
+
 // @desc    Set or update star rating for a master
 // @route   POST /api/masters/:slug/rate
 // @access  Private (user or master)
 const setRating = asyncHandler(async (req, res) => {
   const { slug } = req.params;
-  const { stars } = req.body;
+  const rawStars = req.body.stars;
   const raterId = req.user._id;
   const raterType = req.user.role === "master" ? "Master" : "User";
 
-  if (!stars || stars < 1 || stars > 5) {
-    const err = new Error("Stars must be between 1 and 5");
+  const stars = Number(rawStars);
+  if (!Number.isInteger(stars) || stars < 1 || stars > 5) {
+    const err = new Error("stars must be an integer between 1 and 5");
     err.statusCode = 400;
     throw err;
   }
@@ -24,7 +67,6 @@ const setRating = asyncHandler(async (req, res) => {
     throw err;
   }
 
-  // Masters cannot rate their own profile
   if (
     req.user.role === "master" &&
     master._id.toString() === raterId.toString()
@@ -34,15 +76,27 @@ const setRating = asyncHandler(async (req, res) => {
     throw err;
   }
 
-  const rating = await Rating.findOneAndUpdate(
-    { raterId, raterType, master: master._id },
-    { stars },
-    { new: true, upsert: true }
-  ).populate("master", "name slug");
+  await Rating.findOneAndUpdate(
+    { raterId, master: master._id },
+    { $set: { stars, raterType } },
+    { new: true, upsert: true, runValidators: true },
+  );
+
+  const { average, count } = await aggregateMasterRating(master._id);
+
+  const data = {
+    stars,
+    rating: average,
+    reviewCount: count,
+  };
+
+  if (req.user.role === "user") {
+    data.ratedMasters = await buildRatedMastersForUser(raterId);
+  }
 
   res.json({
     success: true,
-    data: rating,
+    data,
     message: "Rating saved successfully",
   });
 });
@@ -115,4 +169,5 @@ module.exports = {
   setRating,
   getMyRating,
   getMasterRatings,
+  buildRatedMastersForUser,
 };
