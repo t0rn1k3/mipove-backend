@@ -4,6 +4,7 @@ const mongoose = require("mongoose");
 const Order = require("../models/Order");
 const Master = require("../models/Master");
 const User = require("../models/User");
+const CreditUnlock = require("../models/CreditUnlock");
 const { uploadToB2 } = require("../utils/uploadToB2");
 const {
   loadContactUnlockedSet,
@@ -633,6 +634,8 @@ const updateOrder = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Owner deletes their order (customer: Order.user; master: Order.orderingMaster). Pending only, same as PATCH.
+// @route   DELETE /api/orders/:id
 const deleteOrder = asyncHandler(async (req, res) => {
   const { id } = req.params;
   if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -661,8 +664,15 @@ const deleteOrder = asyncHandler(async (req, res) => {
     throw err;
   }
 
+  if (!USER_EDITABLE_STATUSES.includes(order.status)) {
+    const err = new Error("Order can only be deleted while status is pending");
+    err.statusCode = 400;
+    throw err;
+  }
+
   (order.attachments || []).forEach(unlinkAttachment);
   await Master.updateMany({ favoriteOrders: id }, { $pull: { favoriteOrders: id } });
+  await CreditUnlock.deleteMany({ targetId: String(id) });
   if (req.user.role === "user") {
     await User.findByIdAndUpdate(req.user._id, { $pull: { orders: id } });
   }
