@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const User = require("../models/User");
 const Master = require("../models/Master");
 const Admin = require("../models/Admin");
@@ -43,11 +44,120 @@ function exposeAccessTokenPayload(accessToken) {
   return { accessToken };
 }
 
+async function getMasterRatingStats(masterId) {
+  const mid =
+    masterId instanceof mongoose.Types.ObjectId
+      ? masterId
+      : new mongoose.Types.ObjectId(masterId);
+  const stats = await Rating.aggregate([
+    { $match: { master: mid } },
+    {
+      $group: {
+        _id: null,
+        average: { $avg: "$stars" },
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+  if (stats[0]) {
+    return {
+      average: Math.round(stats[0].average * 10) / 10,
+      count: stats[0].count,
+    };
+  }
+  return { average: 0, count: 0 };
+}
+
+/** Masters the client has rated (flat shape for frontend RatedMasterItem). */
+async function getRatedMastersForUser(userId) {
+  const ratings = await Rating.find({
+    raterId: userId,
+    raterType: "User",
+  })
+    .populate("master", "name slug image specialty location")
+    .sort({ updatedAt: -1 })
+    .lean();
+
+  return ratings
+    .filter((r) => r.master)
+    .map((r) => {
+      const m = r.master;
+      return {
+        _id: m._id,
+        name: m.name,
+        slug: m.slug || "",
+        image: m.image || "",
+        specialty: m.specialty || "",
+        location: m.location || "",
+        stars: r.stars,
+        ratedAt: r.updatedAt || r.createdAt,
+      };
+    });
+}
+
+/** Normalized profile for GET/PATCH /api/auth/me (and profile aliases). */
+async function buildMePayload(doc, role) {
+  const raw = doc && (doc.toObject ? doc.toObject() : { ...doc });
+  delete raw.password;
+
+  if (role === "user") {
+    delete raw.orders;
+    const ratedMasters = await getRatedMastersForUser(raw._id);
+    return {
+      _id: raw._id,
+      name: raw.name,
+      email: raw.email,
+      role: "user",
+      phone: raw.phone || "",
+      location: raw.location || "",
+      image: raw.image || "",
+      ratedMasters,
+    };
+  }
+
+  if (role === "master") {
+    const { average, count } = await getMasterRatingStats(raw._id);
+    return {
+      _id: raw._id,
+      name: raw.name,
+      email: raw.email,
+      role: "master",
+      phone: raw.phone || "",
+      location: raw.location || "",
+      slug: raw.slug || "",
+      image: raw.image || "",
+      specialty: raw.specialty || "",
+      specialtyLabel: getSpecialtyLabel(raw.specialty || ""),
+      bio: raw.bio || "",
+      instagram: raw.instagram || "",
+      website: raw.website || "",
+      portfolioImages: Array.isArray(raw.portfolioImages) ? raw.portfolioImages : [],
+      works: Array.isArray(raw.works) ? raw.works : [],
+      credits: raw.credits ?? 0,
+      rating: average,
+      reviewCount: count,
+    };
+  }
+
+  if (role === "admin") {
+    return {
+      _id: raw._id,
+      name: raw.name,
+      email: raw.email,
+      role: "admin",
+      phone: raw.phone || "",
+      image: raw.image || "",
+    };
+  }
+
+  return raw;
+}
+
 // @desc    Register user (normal client)
 // @route   POST /api/auth/users/register
 // @access  Public
 const registerUser = asyncHandler(async (req, res) => {
-  const { name, email, phone, password } = req.body;
+  const { name, email, phone, password, location: locRaw } = req.body || {};
 
   if (!name || !email || !password) {
     const err = new Error("Please provide name, email, and password");
@@ -69,22 +179,18 @@ const registerUser = asyncHandler(async (req, res) => {
     name,
     email: email.toLowerCase().trim(),
     phone: phone || "",
+    location:
+      locRaw != null && String(locRaw).trim() ? String(locRaw).trim() : "",
     password: hashedPassword,
     role: "user",
   });
 
   const tokens = issueAuthCookies(res, user._id, "user");
+  const data = await buildMePayload(user, "user");
 
   res.status(201).json({
     success: true,
-    data: {
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      phone: user.phone,
-      role: user.role,
-      image: user.image || "",
-    },
+    data,
     message: "Registered successfully",
     ...exposeAccessTokenPayload(tokens.accessToken),
   });
@@ -130,17 +236,11 @@ const registerAdmin = asyncHandler(async (req, res) => {
   });
 
   const tokens = issueAuthCookies(res, admin._id, "admin");
+  const data = await buildMePayload(admin, "admin");
 
   res.status(201).json({
     success: true,
-    data: {
-      _id: admin._id,
-      name: admin.name,
-      email: admin.email,
-      phone: admin.phone || "",
-      role: "admin",
-      image: admin.image || "",
-    },
+    data,
     message: "Registered successfully",
     ...exposeAccessTokenPayload(tokens.accessToken),
   });
@@ -199,19 +299,11 @@ const registerMaster = asyncHandler(async (req, res) => {
   });
 
   const tokens = issueAuthCookies(res, master._id, "master");
+  const data = await buildMePayload(master, "master");
 
   res.status(201).json({
     success: true,
-    data: {
-      _id: master._id,
-      name: master.name,
-      email: master.email,
-      phone: master.phone || "",
-      role: "master",
-      image: master.image || "",
-      slug: master.slug,
-      credits: master.credits,
-    },
+    data,
     message: "Registered successfully",
     ...exposeAccessTokenPayload(tokens.accessToken),
   });
@@ -275,17 +367,10 @@ const login = asyncHandler(async (req, res) => {
       throw err;
     }
     const tokens = issueAuthCookies(res, master._id, "master");
+    const data = await buildMePayload(master, "master");
     return res.json({
       success: true,
-      data: {
-        _id: master._id,
-        name: master.name,
-        email: master.email,
-        phone: master.phone || "",
-        role: "master",
-        image: master.image || "",
-        slug: master.slug,
-      },
+      data,
       message: "Logged in successfully",
       ...exposeAccessTokenPayload(tokens.accessToken),
     });
@@ -305,16 +390,10 @@ const login = asyncHandler(async (req, res) => {
       throw err;
     }
     issueAuthCookies(res, admin._id, "admin");
+    const data = await buildMePayload(admin, "admin");
     return res.json({
       success: true,
-      data: {
-        _id: admin._id,
-        name: admin.name,
-        email: admin.email,
-        phone: admin.phone || "",
-        role: "admin",
-        image: admin.image || "",
-      },
+      data,
       message: "Logged in successfully",
     });
   }
@@ -381,10 +460,11 @@ const refresh = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Update profile (name, phone, email, password, image; masters: specialty, location, bio, instagram, website)
+// @desc    Update profile (partial JSON / multipart). Omitted fields unchanged. Clients: name, email, phone, location; masters also specialty, bio, socials.
 // @route   PUT/PATCH /api/auth/profile, PATCH/PUT /api/auth/me
 // @access  Private (works for users, masters, and admins)
 const updateProfile = asyncHandler(async (req, res) => {
+  const body = req.body || {};
   const {
     name,
     phone,
@@ -395,17 +475,35 @@ const updateProfile = asyncHandler(async (req, res) => {
     bio,
     instagram,
     website,
-  } = req.body;
+  } = body;
   const accountId = req.user._id;
   const isMaster = req.user.role === "master";
   const isAdmin = req.user.role === "admin";
+  const isUser = req.user.role === "user";
 
   const updateData = {};
-  if (name) updateData.name = name.trim();
-  if (phone !== undefined) updateData.phone = phone.trim();
 
-  if (email) {
-    const emailNorm = email.toLowerCase().trim();
+  if (name !== undefined) {
+    const t = String(name).trim();
+    if (!t) {
+      const err = new Error("name cannot be empty");
+      err.statusCode = 400;
+      throw err;
+    }
+    updateData.name = t;
+  }
+
+  if (phone !== undefined) {
+    updateData.phone = phone == null ? "" : String(phone).trim();
+  }
+
+  if (email !== undefined) {
+    const emailNorm = String(email).toLowerCase().trim();
+    if (!emailNorm) {
+      const err = new Error("email cannot be empty");
+      err.statusCode = 400;
+      throw err;
+    }
     if (isMaster) {
       const existing = await Master.findOne({
         email: emailNorm,
@@ -440,9 +538,8 @@ const updateProfile = asyncHandler(async (req, res) => {
     updateData.email = emailNorm;
   }
 
-  if (password) {
-    const { hashPassword } = require("../utils/helpers");
-    updateData.password = await hashPassword(password);
+  if (password !== undefined && String(password).trim()) {
+    updateData.password = await hashPassword(String(password));
   }
 
   if (req.file && req.file.buffer) {
@@ -452,7 +549,7 @@ const updateProfile = asyncHandler(async (req, res) => {
       req.file.mimetype,
       "profiles",
     );
-  } else if (req.body?.image !== undefined) {
+  } else if (body.image !== undefined) {
     const err = new Error(
       "Profile image must be uploaded as multipart/form-data (field name: image).",
     );
@@ -460,7 +557,10 @@ const updateProfile = asyncHandler(async (req, res) => {
     throw err;
   }
 
-  // Master-specific fields
+  if (isUser && location !== undefined) {
+    updateData.location = location == null ? "" : String(location).trim();
+  }
+
   if (isMaster) {
     if (specialty !== undefined) {
       const v = validateSpecialty(specialty);
@@ -471,27 +571,31 @@ const updateProfile = asyncHandler(async (req, res) => {
       }
       updateData.specialty = v.specialty === undefined ? undefined : v.specialty;
     }
-    if (location !== undefined) updateData.location = location?.trim() || "";
-    if (bio !== undefined) updateData.bio = bio?.trim() || "";
-    if (instagram !== undefined) updateData.instagram = instagram?.trim() || "";
-    if (website !== undefined) updateData.website = website?.trim() || "";
+    if (location !== undefined) {
+      updateData.location = location == null ? "" : String(location).trim();
+    }
+    if (bio !== undefined) updateData.bio = bio == null ? "" : String(bio).trim();
+    if (instagram !== undefined) {
+      updateData.instagram = instagram == null ? "" : String(instagram).trim();
+    }
+    if (website !== undefined) {
+      updateData.website = website == null ? "" : String(website).trim();
+    }
   }
 
+  const role = req.user.role;
   if (Object.keys(updateData).length === 0) {
     const doc = isMaster
       ? await Master.findById(accountId).select("-password")
       : isAdmin
         ? await Admin.findById(accountId).select("-password")
         : await User.findById(accountId).select("-password");
-    const data = doc.toObject ? doc.toObject() : doc;
-    if (isMaster) {
-      data.role = "master";
-      data.specialtyLabel = getSpecialtyLabel(data.specialty || "");
+    if (!doc) {
+      const err = new Error("Account not found");
+      err.statusCode = 404;
+      throw err;
     }
-    if (isAdmin) data.role = "admin";
-    if (req.user.role === "user") {
-      data.ratedMasters = await getRatedMastersForUser(accountId);
-    }
+    const data = await buildMePayload(doc, role);
     return res.json({
       success: true,
       data,
@@ -510,19 +614,17 @@ const updateProfile = asyncHandler(async (req, res) => {
           runValidators: true,
         }).select("-password")
       : await User.findByIdAndUpdate(accountId, updateData, {
-        new: true,
-        runValidators: true,
-      }).select("-password");
+          new: true,
+          runValidators: true,
+        }).select("-password");
 
-  const data = doc.toObject ? doc.toObject() : doc;
-  if (isMaster) {
-    data.role = "master";
-    data.specialtyLabel = getSpecialtyLabel(data.specialty || "");
+  if (!doc) {
+    const err = new Error("Account not found");
+    err.statusCode = 404;
+    throw err;
   }
-  if (isAdmin) data.role = "admin";
-  if (req.user.role === "user") {
-    data.ratedMasters = await getRatedMastersForUser(accountId);
-  }
+
+  const data = await buildMePayload(doc, role);
 
   res.json({
     success: true,
@@ -531,28 +633,9 @@ const updateProfile = asyncHandler(async (req, res) => {
   });
 });
 
-// Helper: fetch rated masters for a user (clients only)
-const getRatedMastersForUser = async (userId) => {
-  const ratings = await Rating.find({
-    raterId: userId,
-    raterType: "User",
-  })
-    .populate("master", "name slug image specialty location")
-    .sort({ updatedAt: -1 })
-    .lean();
-  return ratings
-    .filter((r) => r.master)
-    .map((r) => ({
-      master: r.master,
-      stars: r.stars,
-      ratedAt: r.updatedAt,
-    }));
-};
-
 // @desc    Get current logged-in user, master, or admin
 // @route   GET /api/auth/me
 // @access  Private
-// For users: includes ratedMasters (masters they rated) instead of picture gallery
 const getMe = asyncHandler(async (req, res) => {
   const isMaster = req.user.role === "master";
   const isAdmin = req.user.role === "admin";
@@ -561,15 +644,12 @@ const getMe = asyncHandler(async (req, res) => {
     : isAdmin
       ? await Admin.findById(req.user._id).select("-password")
       : await User.findById(req.user._id).select("-password");
-  const data = doc.toObject ? doc.toObject() : doc;
-  if (isMaster) {
-    data.role = "master";
-    data.specialtyLabel = getSpecialtyLabel(data.specialty || "");
+  if (!doc) {
+    const err = new Error("Account not found");
+    err.statusCode = 404;
+    throw err;
   }
-  if (isAdmin) data.role = "admin";
-  if (req.user.role === "user") {
-    data.ratedMasters = await getRatedMastersForUser(req.user._id);
-  }
+  const data = await buildMePayload(doc, req.user.role);
   res.json({
     success: true,
     data,

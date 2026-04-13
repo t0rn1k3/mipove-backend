@@ -23,6 +23,8 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
     phone: { type: String, trim: true },
+    /** City / free-text location for client profile (same idea as Master.location) */
+    location: { type: String, trim: true, default: "" },
     password: { type: String, required: true, minlength: 6, select: false },
     role: {
       type: String,
