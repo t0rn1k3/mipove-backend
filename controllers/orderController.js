@@ -18,6 +18,9 @@ const orderingMasterSummary = "name email phone image slug specialty";
 
 const MAX_ATTACHMENTS = 10;
 const USER_EDITABLE_STATUSES = ["pending"];
+const ORDERS_PAGE_DEFAULT_LIMIT = 15;
+const ORDERS_PAGE_MAX_LIMIT = 50;
+const ORDERS_LIST_SORT = { createdAt: -1, _id: -1 };
 
 function orderDetailQuery(q) {
   return q
@@ -170,6 +173,108 @@ function wantsOnlyMyOrders(req) {
   return v === "1" || String(v).toLowerCase() === "true";
 }
 
+function parseOrdersPagination(req) {
+  const hasLimit = Object.prototype.hasOwnProperty.call(req.query, "limit");
+  const hasOffset = Object.prototype.hasOwnProperty.call(req.query, "offset");
+
+  if (!hasLimit && !hasOffset) {
+    return { usePagination: false };
+  }
+
+  let limit = ORDERS_PAGE_DEFAULT_LIMIT;
+  if (hasLimit) {
+    const raw = req.query.limit;
+    if (raw === "" || raw === null) {
+      const err = new Error(
+        `limit must be an integer between 1 and ${ORDERS_PAGE_MAX_LIMIT}`,
+      );
+      err.statusCode = 400;
+      throw err;
+    }
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 1 || n > ORDERS_PAGE_MAX_LIMIT) {
+      const err = new Error(
+        `limit must be an integer between 1 and ${ORDERS_PAGE_MAX_LIMIT}`,
+      );
+      err.statusCode = 400;
+      throw err;
+    }
+    limit = n;
+  }
+
+  let offset = 0;
+  if (hasOffset) {
+    const raw = req.query.offset;
+    if (raw === "" || raw === null) {
+      const err = new Error("offset must be a non-negative integer");
+      err.statusCode = 400;
+      throw err;
+    }
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 0) {
+      const err = new Error("offset must be a non-negative integer");
+      err.statusCode = 400;
+      throw err;
+    }
+    offset = n;
+  }
+
+  return { usePagination: true, limit, offset };
+}
+
+function buildOrdersListExtraFilter(req) {
+  const extra = {};
+  const andParts = [];
+
+  const status = req.query.status;
+  if (status != null && String(status).trim()) {
+    const s = String(status).trim();
+    if (!Order.ORDER_STATUSES.includes(s)) {
+      const err = new Error(
+        `status must be one of: ${Order.ORDER_STATUSES.join(", ")}`,
+      );
+      err.statusCode = 400;
+      throw err;
+    }
+    extra.status = s;
+  }
+
+  const city = req.query.city;
+  if (city != null && String(city).trim()) {
+    const esc = String(city).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    extra["location.city"] = new RegExp(esc, "i");
+  }
+
+  const parseBudgetEdge = (value, name) => {
+    if (value === undefined || value === null || value === "") return null;
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0) {
+      const err = new Error(`${name} must be a non-negative number`);
+      err.statusCode = 400;
+      throw err;
+    }
+    return n;
+  };
+
+  const bm = parseBudgetEdge(req.query.budgetMin, "budgetMin");
+  const bx = parseBudgetEdge(req.query.budgetMax, "budgetMax");
+  if (bm != null) {
+    andParts.push({
+      $or: [{ "budget.max": null }, { "budget.max": { $gte: bm } }],
+    });
+  }
+  if (bx != null) {
+    andParts.push({
+      $or: [{ "budget.min": null }, { "budget.min": { $lte: bx } }],
+    });
+  }
+
+  if (andParts.length) {
+    extra.$and = andParts;
+  }
+  return extra;
+}
+
 // @desc    List order categories for filters (marketplace)
 // @route   GET /api/orders/categories
 // @access  Public
@@ -264,6 +369,10 @@ const createOrder = asyncHandler(async (req, res) => {
   });
 });
 
+// GET /api/orders — Omit both `limit` and `offset` for legacy `{ data, count }` (full list).
+// Pass `limit` and/or `offset` for `{ items, hasMore, nextOffset?, limit, offset }`.
+// Filters run in MongoDB before skip/limit: categories/category, status, city, budgetMin/budgetMax.
+// Stable sort: createdAt desc, then _id desc.
 const getOrders = asyncHandler(async (req, res) => {
   const categoryParam = req.query.categories ?? req.query.category;
   let categoryFilter = {};
@@ -279,32 +388,77 @@ const getOrders = asyncHandler(async (req, res) => {
     }
   }
 
+  const listExtra = buildOrdersListExtraFilter(req);
+  const pagination = parseOrdersPagination(req);
+
   if (req.user.role === "user") {
-    const orders = await orderDetailQuery(
-      Order.find({ user: req.user._id, ...categoryFilter }).sort({
-        createdAt: -1,
-      }),
+    const filter = { user: req.user._id, ...categoryFilter, ...listExtra };
+
+    if (!pagination.usePagination) {
+      const orders = await orderDetailQuery(
+        Order.find(filter).sort(ORDERS_LIST_SORT),
+      ).lean();
+      return res.json({
+        success: true,
+        count: orders.length,
+        data: orders,
+      });
+    }
+
+    const { limit, offset } = pagination;
+    const batch = await orderDetailQuery(
+      Order.find(filter).sort(ORDERS_LIST_SORT).skip(offset).limit(limit + 1),
     ).lean();
-    return res.json({
+    const hasMore = batch.length > limit;
+    const items = hasMore ? batch.slice(0, limit) : batch;
+    const payload = {
       success: true,
-      count: orders.length,
-      data: orders,
-    });
+      items,
+      hasMore,
+      limit,
+      offset,
+    };
+    if (hasMore) {
+      payload.nextOffset = offset + limit;
+    }
+    return res.json(payload);
   }
 
   if (req.user.role === "master") {
     const filter = wantsOnlyMyOrders(req)
-      ? { orderingMaster: req.user._id, ...categoryFilter }
-      : { ...categoryFilter };
-    const orders = await orderDetailQuery(
-      Order.find(filter).sort({ createdAt: -1 }),
+      ? { orderingMaster: req.user._id, ...categoryFilter, ...listExtra }
+      : { ...categoryFilter, ...listExtra };
+
+    if (!pagination.usePagination) {
+      const orders = await orderDetailQuery(
+        Order.find(filter).sort(ORDERS_LIST_SORT),
+      ).lean();
+      const data = await applyMasterContactGateToOrders(orders, req.user._id);
+      return res.json({
+        success: true,
+        count: data.length,
+        data,
+      });
+    }
+
+    const { limit, offset } = pagination;
+    const batch = await orderDetailQuery(
+      Order.find(filter).sort(ORDERS_LIST_SORT).skip(offset).limit(limit + 1),
     ).lean();
-    const data = await applyMasterContactGateToOrders(orders, req.user._id);
-    return res.json({
+    const hasMore = batch.length > limit;
+    const pageOrders = hasMore ? batch.slice(0, limit) : batch;
+    const items = await applyMasterContactGateToOrders(pageOrders, req.user._id);
+    const payload = {
       success: true,
-      count: data.length,
-      data,
-    });
+      items,
+      hasMore,
+      limit,
+      offset,
+    };
+    if (hasMore) {
+      payload.nextOffset = offset + limit;
+    }
+    return res.json(payload);
   }
 
   const err = new Error("Not authorized");
