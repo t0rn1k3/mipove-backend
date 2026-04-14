@@ -11,6 +11,7 @@ const {
   applyMasterContactGate,
   applyMasterContactGateToOrders,
   applyGuestOrderListGate,
+  publisherUserId,
 } = require("../utils/orderContactGate");
 const asyncHandler = require("express-async-handler");
 const { ORDER_CATEGORIES, validateOrderCategory } = require("../config/orderCategories");
@@ -20,6 +21,8 @@ const orderingMasterSummary = "name email phone image slug specialty";
 
 const MAX_ATTACHMENTS = 10;
 const USER_EDITABLE_STATUSES = ["pending"];
+/** Clients may refine listing/contact after a pro accepts; masters stay pending-only for edits. */
+const CLIENT_ORDER_UPDATE_STATUSES = ["pending", "accepted"];
 const ORDERS_PAGE_DEFAULT_LIMIT = 15;
 const ORDERS_PAGE_MAX_LIMIT = 50;
 const ORDERS_LIST_SORT = { createdAt: -1, _id: -1 };
@@ -575,7 +578,7 @@ const getOrderById = asyncHandler(async (req, res) => {
   }
 
   if (req.user.role === "user") {
-    const uid = order.user && order.user._id ? String(order.user._id) : null;
+    const uid = publisherUserId(order);
     if (!uid || uid !== String(req.user._id)) {
       const err = new Error("Not authorized to view this order");
       err.statusCode = 403;
@@ -631,9 +634,13 @@ const updateOrder = asyncHandler(async (req, res) => {
     throw err;
   }
 
-  if (!USER_EDITABLE_STATUSES.includes(order.status)) {
+  const allowedStatuses =
+    req.user.role === "user" ? CLIENT_ORDER_UPDATE_STATUSES : USER_EDITABLE_STATUSES;
+  if (!allowedStatuses.includes(order.status)) {
     const err = new Error(
-      "Order can only be edited while status is pending",
+      req.user.role === "user"
+        ? "Order can only be edited while status is pending or accepted"
+        : "Order can only be edited while status is pending",
     );
     err.statusCode = 400;
     throw err;

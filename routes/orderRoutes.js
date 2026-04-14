@@ -36,6 +36,7 @@ router
   .route("/:id")
   .get(protect, authorize("user", "master"), getOrderById)
   .patch(protect, authorize("user", "master"), optionalOrderFiles, updateOrder)
+  .put(protect, authorize("user", "master"), optionalOrderFiles, updateOrder)
   .delete(protect, authorize("user", "master"), deleteOrder);
 
 module.exports = router;
