@@ -33,6 +33,7 @@ const orderSchema = new mongoose.Schema(
       enum: ORDER_STATUSES,
       default: "pending",
     },
+    /** Scheduled work date/time from the client (ISO date or datetime). */
     scheduledAt: { type: Date, default: null },
     price: { type: Number, min: 0, default: null },
     attachments: {

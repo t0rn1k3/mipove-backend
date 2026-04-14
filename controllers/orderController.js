@@ -45,6 +45,7 @@ function parsePrice(price) {
   return n;
 }
 
+/** ISO date (YYYY-MM-DD) or full ISO datetime string; null/empty clears scheduling. */
 function parseScheduledAt(value) {
   if (value == null || value === "") return null;
   const d = new Date(value);
