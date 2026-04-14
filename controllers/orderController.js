@@ -142,20 +142,29 @@ function parseCategoriesInput(body) {
   return body.category;
 }
 
-/** Multipart or JSON body: optional customerNameSnapshot / customerPhoneSnapshot. */
+/**
+ * Multipart often sends empty strings for unused parts; treat blank as "not provided"
+ * and fall back to account name/phone so create still stores display contact.
+ */
 function resolveCustomerSnapshotsForCreate(body, account) {
   const b = body || {};
   let customerNameSnapshot = "";
-  if (Object.prototype.hasOwnProperty.call(b, "customerNameSnapshot")) {
-    customerNameSnapshot =
-      b.customerNameSnapshot == null ? "" : String(b.customerNameSnapshot).trim();
+  if (
+    Object.prototype.hasOwnProperty.call(b, "customerNameSnapshot") &&
+    b.customerNameSnapshot != null &&
+    String(b.customerNameSnapshot).trim()
+  ) {
+    customerNameSnapshot = String(b.customerNameSnapshot).trim();
   } else if (account?.name) {
     customerNameSnapshot = String(account.name);
   }
   let customerPhoneSnapshot = "";
-  if (Object.prototype.hasOwnProperty.call(b, "customerPhoneSnapshot")) {
-    customerPhoneSnapshot =
-      b.customerPhoneSnapshot == null ? "" : String(b.customerPhoneSnapshot).trim();
+  if (
+    Object.prototype.hasOwnProperty.call(b, "customerPhoneSnapshot") &&
+    b.customerPhoneSnapshot != null &&
+    String(b.customerPhoneSnapshot).trim()
+  ) {
+    customerPhoneSnapshot = String(b.customerPhoneSnapshot).trim();
   } else if (account?.phone != null) {
     customerPhoneSnapshot = String(account.phone || "");
   }

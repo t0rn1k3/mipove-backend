@@ -3,13 +3,25 @@ const CreditUnlock = require("../models/CreditUnlock");
 /** Must match `action` used in POST /api/credits/spend for contact unlocks. */
 const CONTACT_UNLOCK_ACTION = "view_contact";
 
+/** Ref id whether populate ran or field is still an ObjectId. */
+function publisherOrderingMasterId(order) {
+  if (!order || order.orderingMaster == null) return null;
+  const m = order.orderingMaster;
+  if (typeof m === "object" && m !== null && m._id != null) return String(m._id);
+  return String(m);
+}
+
+function publisherUserId(order) {
+  if (!order || order.user == null) return null;
+  const u = order.user;
+  if (typeof u === "object" && u !== null && u._id != null) return String(u._id);
+  return String(u);
+}
+
 function masterIsOrderPublisher(viewerMasterId, order) {
   if (!viewerMasterId || !order) return false;
-  return (
-    order.orderingMaster &&
-    order.orderingMaster._id &&
-    String(order.orderingMaster._id) === String(viewerMasterId)
-  );
+  const pid = publisherOrderingMasterId(order);
+  return pid != null && pid === String(viewerMasterId);
 }
 
 async function loadContactUnlockedSet(viewerMasterId, orderIdStrings) {
@@ -63,14 +75,12 @@ function orderPublisherMatchesViewer(order, viewer) {
   if (!viewer || !viewer._id) return false;
   const id = String(viewer._id);
   if (viewer.role === "master") {
-    return (
-      order.orderingMaster &&
-      order.orderingMaster._id &&
-      String(order.orderingMaster._id) === id
-    );
+    const pid = publisherOrderingMasterId(order);
+    return pid != null && pid === id;
   }
   if (viewer.role === "user") {
-    return order.user && order.user._id && String(order.user._id) === id;
+    const pid = publisherUserId(order);
+    return pid != null && pid === id;
   }
   return false;
 }
@@ -92,6 +102,8 @@ function applyGuestOrderListGate(order, viewer) {
 module.exports = {
   CONTACT_UNLOCK_ACTION,
   masterIsOrderPublisher,
+  publisherUserId,
+  publisherOrderingMasterId,
   orderPublisherMatchesViewer,
   loadContactUnlockedSet,
   applyMasterContactGate,
