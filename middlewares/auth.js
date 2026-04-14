@@ -87,6 +87,51 @@ const protect = asyncHandler(async (req, res, next) => {
 });
 
 /**
+ * If a valid access token is present, attach req.user like `protect`; otherwise req.user stays null.
+ * Does not send 401 — for public routes that optionally personalize when logged in.
+ */
+const optionalProtect = asyncHandler(async (req, res, next) => {
+  req.user = null;
+  const token = getToken(req);
+  if (!token) {
+    return next();
+  }
+
+  const decoded = verifyToken(token, { tokenType: "access" });
+  if (!decoded) {
+    return next();
+  }
+
+  if (decoded.type === "master") {
+    const master = await Master.findById(decoded.id).select("-password");
+    if (!master || master.isBlocked) {
+      return next();
+    }
+    req.user = master.toObject();
+    req.user._id = master._id;
+    req.user.role = "master";
+  } else if (decoded.type === "admin") {
+    const admin = await Admin.findById(decoded.id).select("-password");
+    if (!admin || admin.isBlocked) {
+      return next();
+    }
+    req.user = admin.toObject();
+    req.user._id = admin._id;
+    req.user.role = "admin";
+  } else {
+    const user = await User.findById(decoded.id).select("-password");
+    if (!user || user.isBlocked) {
+      return next();
+    }
+    req.user = user.toObject ? user.toObject() : user;
+    req.user._id = user._id;
+    req.user.role = user.role;
+  }
+
+  next();
+});
+
+/**
  * Restrict to specific roles
  * @param  {...string} roles - Allowed roles (e.g. 'user', 'master')
  */
@@ -108,4 +153,4 @@ const authorize = (...roles) => {
   };
 };
 
-module.exports = { protect, authorize };
+module.exports = { protect, optionalProtect, authorize };

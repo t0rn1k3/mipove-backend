@@ -10,6 +10,7 @@ const {
   loadContactUnlockedSet,
   applyMasterContactGate,
   applyMasterContactGateToOrders,
+  applyGuestOrderListGate,
 } = require("../utils/orderContactGate");
 const asyncHandler = require("express-async-handler");
 const { ORDER_CATEGORIES, validateOrderCategory } = require("../config/orderCategories");
@@ -379,10 +380,10 @@ const createOrder = asyncHandler(async (req, res) => {
   });
 });
 
-// GET /api/orders — Omit both `limit` and `offset` for legacy `{ data, count }` (full list).
-// Pass `limit` and/or `offset` for `{ items, hasMore, nextOffset?, limit, offset }`.
-// Filters run in MongoDB before skip/limit: categories/category, status, city, budgetMin/budgetMax.
-// Stable sort: createdAt desc, then _id desc.
+// GET /api/orders — Public marketplace when unauthenticated or without mine=true (optionalProtect).
+// mine=true / placedByMe requires auth; scopes to publisher (user or orderingMaster).
+// Omit both limit and offset for legacy `{ data, count }`; else paginated `{ items, hasMore, nextOffset?, ... }`.
+// Public list redacts publisher contact + customer snapshots; masters browsing get credit-unlock gate.
 const getOrders = asyncHandler(async (req, res) => {
   const categoryParam = req.query.categories ?? req.query.category;
   let categoryFilter = {};
@@ -400,8 +401,22 @@ const getOrders = asyncHandler(async (req, res) => {
 
   const listExtra = buildOrdersListExtraFilter(req);
   const pagination = parseOrdersPagination(req);
+  const mine = wantsOnlyMyOrders(req);
 
-  if (req.user.role === "user") {
+  if (mine) {
+    if (!req.user) {
+      const err = new Error("Authentication required");
+      err.statusCode = 401;
+      throw err;
+    }
+    if (!["user", "master"].includes(req.user.role)) {
+      const err = new Error("Not authorized to list personal orders");
+      err.statusCode = 403;
+      throw err;
+    }
+  }
+
+  if (mine && req.user.role === "user") {
     const filter = { user: req.user._id, ...categoryFilter, ...listExtra };
 
     if (!pagination.usePagination) {
@@ -434,10 +449,8 @@ const getOrders = asyncHandler(async (req, res) => {
     return res.json(payload);
   }
 
-  if (req.user.role === "master") {
-    const filter = wantsOnlyMyOrders(req)
-      ? { orderingMaster: req.user._id, ...categoryFilter, ...listExtra }
-      : { ...categoryFilter, ...listExtra };
+  if (mine && req.user.role === "master") {
+    const filter = { orderingMaster: req.user._id, ...categoryFilter, ...listExtra };
 
     if (!pagination.usePagination) {
       const orders = await orderDetailQuery(
@@ -471,9 +484,44 @@ const getOrders = asyncHandler(async (req, res) => {
     return res.json(payload);
   }
 
-  const err = new Error("Not authorized");
-  err.statusCode = 403;
-  throw err;
+  const publicFilter = { ...categoryFilter, ...listExtra };
+
+  if (!pagination.usePagination) {
+    const orders = await orderDetailQuery(
+      Order.find(publicFilter).sort(ORDERS_LIST_SORT),
+    ).lean();
+    const data =
+      req.user && req.user.role === "master"
+        ? await applyMasterContactGateToOrders(orders, req.user._id)
+        : orders.map(applyGuestOrderListGate);
+    return res.json({
+      success: true,
+      count: data.length,
+      data,
+    });
+  }
+
+  const { limit, offset } = pagination;
+  const batch = await orderDetailQuery(
+    Order.find(publicFilter).sort(ORDERS_LIST_SORT).skip(offset).limit(limit + 1),
+  ).lean();
+  const hasMore = batch.length > limit;
+  const pageOrders = hasMore ? batch.slice(0, limit) : batch;
+  const items =
+    req.user && req.user.role === "master"
+      ? await applyMasterContactGateToOrders(pageOrders, req.user._id)
+      : pageOrders.map(applyGuestOrderListGate);
+  const payload = {
+    success: true,
+    items,
+    hasMore,
+    limit,
+    offset,
+  };
+  if (hasMore) {
+    payload.nextOffset = offset + limit;
+  }
+  return res.json(payload);
 });
 
 const getOrderById = asyncHandler(async (req, res) => {

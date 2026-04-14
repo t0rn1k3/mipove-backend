@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { protect, authorize } = require("../middlewares/auth");
+const { protect, optionalProtect, authorize } = require("../middlewares/auth");
 const { orderAttachmentsUpload } = require("../config/memoryMulter");
 const {
   getOrderCategories,
@@ -30,7 +30,7 @@ router.get("/categories", getOrderCategories);
 router
   .route("/")
   .post(protect, authorize("user", "master"), optionalOrderFiles, createOrder)
-  .get(protect, authorize("user", "master"), getOrders);
+  .get(optionalProtect, getOrders);
 
 router
   .route("/:id")

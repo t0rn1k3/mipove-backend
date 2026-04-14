@@ -59,10 +59,19 @@ async function applyMasterContactGateToOrders(orders, viewerMasterId) {
   return orders.map((o) => applyMasterContactGate(o, viewerMasterId, unlockedSet));
 }
 
+/** Anonymous / non-master viewers: redact publisher profiles and contact snapshots on list cards. */
+function applyGuestOrderListGate(order) {
+  const out = applyMasterContactGate(order, null, new Set());
+  out.customerNameSnapshot = "";
+  out.customerPhoneSnapshot = "";
+  return out;
+}
+
 module.exports = {
   CONTACT_UNLOCK_ACTION,
   masterIsOrderPublisher,
   loadContactUnlockedSet,
   applyMasterContactGate,
   applyMasterContactGateToOrders,
+  applyGuestOrderListGate,
 };
