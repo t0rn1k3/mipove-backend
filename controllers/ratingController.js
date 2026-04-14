@@ -84,6 +84,16 @@ const setRating = asyncHandler(async (req, res) => {
 
   const { average, count } = await aggregateMasterRating(master._id);
 
+  await Master.updateOne(
+    { _id: master._id },
+    {
+      $set: {
+        rating: average,
+        reviewCount: count,
+      },
+    },
+  );
+
   const data = {
     stars,
     rating: average,

@@ -340,7 +340,7 @@ const getMasters = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Get master by slug (with average rating)
+// @desc    Get master by slug (with persisted rating aggregates)
 // @route   GET /api/masters/:slug
 // @access  Public
 const getMasterBySlug = asyncHandler(async (req, res) => {
@@ -354,25 +354,11 @@ const getMasterBySlug = asyncHandler(async (req, res) => {
     throw err;
   }
 
-  const stats = await Rating.aggregate([
-    { $match: { master: master._id } },
-    {
-      $group: {
-        _id: null,
-        average: { $avg: "$stars" },
-        count: { $sum: 1 },
-      },
-    },
-  ]);
-
-  if (stats[0]) {
-    master.rating = {
-      average: Math.round(stats[0].average * 10) / 10,
-      count: stats[0].count,
-    };
-  } else {
-    master.rating = { average: 0, count: 0 };
-  }
+  master.rating = Number.isFinite(master.rating) ? master.rating : 0;
+  master.reviewCount =
+    Number.isFinite(master.reviewCount) && master.reviewCount >= 0
+      ? master.reviewCount
+      : 0;
 
   master.specialtyLabel = getSpecialtyLabel(master.specialty || "");
 

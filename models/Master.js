@@ -23,6 +23,8 @@ const masterSchema = new mongoose.Schema(
     isBlocked: { type: Boolean, default: false },
     lastActiveAt: { type: Date, default: null },
     credits: { type: Number, default: 0, min: 0 },
+    rating: { type: Number, default: 0, min: 0, max: 5 },
+    reviewCount: { type: Number, default: 0, min: 0 },
     specialty: String,
     location: String,
     bio: String,
