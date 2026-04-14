@@ -96,8 +96,7 @@ const setRating = asyncHandler(async (req, res) => {
 
   const data = {
     stars,
-    rating: average,
-    reviewCount: count,
+    rating: { average, count },
   };
 
   if (req.user.role === "user") {

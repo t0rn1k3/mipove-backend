@@ -1,7 +1,6 @@
 const mongoose = require("mongoose");
 const Master = require("../models/Master");
 const Order = require("../models/Order");
-const Rating = require("../models/Rating");
 const asyncHandler = require("express-async-handler");
 const {
   MASTER_PROFESSIONS,
@@ -294,32 +293,17 @@ const getMasters = asyncHandler(async (req, res) => {
   }
 
   const masters = await Master.find(filter)
-    .select("name slug image specialty location bio")
+    .select("name slug image specialty location bio rating reviewCount")
     .lean();
-
-  const masterIds = masters.map((m) => m._id);
-  const stats = await Rating.aggregate([
-    { $match: { master: { $in: masterIds } } },
-    {
-      $group: {
-        _id: "$master",
-        average: { $avg: "$stars" },
-        count: { $sum: 1 },
-      },
-    },
-  ]);
-
-  const statsMap = {};
-  stats.forEach((s) => {
-    statsMap[s._id.toString()] = {
-      average: Math.round(s.average * 10) / 10,
-      count: s.count,
-    };
-  });
 
   const data = masters.map((m) => {
     const spec = m.specialty || "";
-    const item = {
+    const avg = Number.isFinite(m.rating) ? m.rating : 0;
+    const cnt =
+      Number.isFinite(m.reviewCount) && m.reviewCount >= 0
+        ? m.reviewCount
+        : 0;
+    return {
       _id: m._id,
       name: m.name,
       slug: m.slug,
@@ -328,9 +312,8 @@ const getMasters = asyncHandler(async (req, res) => {
       specialtyLabel: getSpecialtyLabel(spec),
       location: m.location || "",
       bio: m.bio || "",
+      rating: { average: avg, count: cnt },
     };
-    item.rating = statsMap[m._id.toString()] || { average: 0, count: 0 };
-    return item;
   });
 
   res.json({
@@ -340,7 +323,7 @@ const getMasters = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Get master by slug (with persisted rating aggregates)
+// @desc    Get master by slug (persisted rating/reviewCount, same shape as list)
 // @route   GET /api/masters/:slug
 // @access  Public
 const getMasterBySlug = asyncHandler(async (req, res) => {
@@ -354,11 +337,13 @@ const getMasterBySlug = asyncHandler(async (req, res) => {
     throw err;
   }
 
-  master.rating = Number.isFinite(master.rating) ? master.rating : 0;
-  master.reviewCount =
+  const avg = Number.isFinite(master.rating) ? master.rating : 0;
+  const cnt =
     Number.isFinite(master.reviewCount) && master.reviewCount >= 0
       ? master.reviewCount
       : 0;
+  master.rating = { average: avg, count: cnt };
+  delete master.reviewCount;
 
   master.specialtyLabel = getSpecialtyLabel(master.specialty || "");
 

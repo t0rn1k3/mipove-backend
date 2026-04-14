@@ -1,8 +1,6 @@
-const mongoose = require("mongoose");
 const User = require("../models/User");
 const Master = require("../models/Master");
 const Admin = require("../models/Admin");
-const Rating = require("../models/Rating");
 const { buildRatedMastersForUser } = require("./ratingController");
 const slugify = require("../utils/slugify");
 const asyncHandler = require("express-async-handler");
@@ -45,30 +43,6 @@ function exposeAccessTokenPayload(accessToken) {
   return { accessToken };
 }
 
-async function getMasterRatingStats(masterId) {
-  const mid =
-    masterId instanceof mongoose.Types.ObjectId
-      ? masterId
-      : new mongoose.Types.ObjectId(masterId);
-  const stats = await Rating.aggregate([
-    { $match: { master: mid } },
-    {
-      $group: {
-        _id: null,
-        average: { $avg: "$stars" },
-        count: { $sum: 1 },
-      },
-    },
-  ]);
-  if (stats[0]) {
-    return {
-      average: Math.round(stats[0].average * 10) / 10,
-      count: stats[0].count,
-    };
-  }
-  return { average: 0, count: 0 };
-}
-
 /** Normalized profile for GET/PATCH /api/auth/me (and profile aliases). */
 async function buildMePayload(doc, role) {
   const raw = doc && (doc.toObject ? doc.toObject() : { ...doc });
@@ -90,7 +64,11 @@ async function buildMePayload(doc, role) {
   }
 
   if (role === "master") {
-    const { average, count } = await getMasterRatingStats(raw._id);
+    const avg = Number.isFinite(raw.rating) ? raw.rating : 0;
+    const cnt =
+      Number.isFinite(raw.reviewCount) && raw.reviewCount >= 0
+        ? raw.reviewCount
+        : 0;
     return {
       _id: raw._id,
       name: raw.name,
@@ -108,8 +86,7 @@ async function buildMePayload(doc, role) {
       portfolioImages: Array.isArray(raw.portfolioImages) ? raw.portfolioImages : [],
       works: Array.isArray(raw.works) ? raw.works : [],
       credits: raw.credits ?? 0,
-      rating: average,
-      reviewCount: count,
+      rating: { average: avg, count: cnt },
     };
   }
 
