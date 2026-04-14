@@ -59,8 +59,30 @@ async function applyMasterContactGateToOrders(orders, viewerMasterId) {
   return orders.map((o) => applyMasterContactGate(o, viewerMasterId, unlockedSet));
 }
 
-/** Anonymous / non-master viewers: redact publisher profiles and contact snapshots on list cards. */
-function applyGuestOrderListGate(order) {
+function orderPublisherMatchesViewer(order, viewer) {
+  if (!viewer || !viewer._id) return false;
+  const id = String(viewer._id);
+  if (viewer.role === "master") {
+    return (
+      order.orderingMaster &&
+      order.orderingMaster._id &&
+      String(order.orderingMaster._id) === id
+    );
+  }
+  if (viewer.role === "user") {
+    return order.user && order.user._id && String(order.user._id) === id;
+  }
+  return false;
+}
+
+/**
+ * Redact publisher profiles and contact snapshots for public list cards.
+ * If `viewer` is the order publisher, return the row unchanged so their reload shows contact.
+ */
+function applyGuestOrderListGate(order, viewer) {
+  if (orderPublisherMatchesViewer(order, viewer)) {
+    return { ...order, contactUnlocked: true };
+  }
   const out = applyMasterContactGate(order, null, new Set());
   out.customerNameSnapshot = "";
   out.customerPhoneSnapshot = "";
@@ -70,6 +92,7 @@ function applyGuestOrderListGate(order) {
 module.exports = {
   CONTACT_UNLOCK_ACTION,
   masterIsOrderPublisher,
+  orderPublisherMatchesViewer,
   loadContactUnlockedSet,
   applyMasterContactGate,
   applyMasterContactGateToOrders,

@@ -142,6 +142,26 @@ function parseCategoriesInput(body) {
   return body.category;
 }
 
+/** Multipart or JSON body: optional customerNameSnapshot / customerPhoneSnapshot. */
+function resolveCustomerSnapshotsForCreate(body, account) {
+  const b = body || {};
+  let customerNameSnapshot = "";
+  if (Object.prototype.hasOwnProperty.call(b, "customerNameSnapshot")) {
+    customerNameSnapshot =
+      b.customerNameSnapshot == null ? "" : String(b.customerNameSnapshot).trim();
+  } else if (account?.name) {
+    customerNameSnapshot = String(account.name);
+  }
+  let customerPhoneSnapshot = "";
+  if (Object.prototype.hasOwnProperty.call(b, "customerPhoneSnapshot")) {
+    customerPhoneSnapshot =
+      b.customerPhoneSnapshot == null ? "" : String(b.customerPhoneSnapshot).trim();
+  } else if (account?.phone != null) {
+    customerPhoneSnapshot = String(account.phone || "");
+  }
+  return { customerNameSnapshot, customerPhoneSnapshot };
+}
+
 function attachmentAbsolute(rel) {
   if (!rel || typeof rel !== "string") return null;
   if (/^https?:\/\//i.test(rel)) return null;
@@ -346,18 +366,23 @@ const createOrder = asyncHandler(async (req, res) => {
     base.categories = catResult.category;
   }
 
+  const { customerNameSnapshot, customerPhoneSnapshot } =
+    resolveCustomerSnapshotsForCreate(req.body, req.user);
+
   const order =
     req.user.role === "user"
-      ? await Order.create({ ...base, user: req.user._id })
-      : await Order.create({ ...base, orderingMaster: req.user._id });
-
-  if (req.user?.name) {
-    order.customerNameSnapshot = String(req.user.name);
-  }
-  if (req.user?.phone != null) {
-    order.customerPhoneSnapshot = String(req.user.phone || "");
-  }
-  await order.save();
+      ? await Order.create({
+          ...base,
+          user: req.user._id,
+          customerNameSnapshot,
+          customerPhoneSnapshot,
+        })
+      : await Order.create({
+          ...base,
+          orderingMaster: req.user._id,
+          customerNameSnapshot,
+          customerPhoneSnapshot,
+        });
 
   if (req.user.role === "user") {
     await User.findByIdAndUpdate(req.user._id, {
@@ -493,7 +518,7 @@ const getOrders = asyncHandler(async (req, res) => {
     const data =
       req.user && req.user.role === "master"
         ? await applyMasterContactGateToOrders(orders, req.user._id)
-        : orders.map(applyGuestOrderListGate);
+        : orders.map((o) => applyGuestOrderListGate(o, req.user));
     return res.json({
       success: true,
       count: data.length,
@@ -510,7 +535,7 @@ const getOrders = asyncHandler(async (req, res) => {
   const items =
     req.user && req.user.role === "master"
       ? await applyMasterContactGateToOrders(pageOrders, req.user._id)
-      : pageOrders.map(applyGuestOrderListGate);
+      : pageOrders.map((o) => applyGuestOrderListGate(o, req.user));
   const payload = {
     success: true,
     items,
@@ -648,6 +673,19 @@ const updateOrder = asyncHandler(async (req, res) => {
       throw err;
     }
     update.categories = catResult.category;
+  }
+
+  if (req.body.customerNameSnapshot !== undefined) {
+    update.customerNameSnapshot =
+      req.body.customerNameSnapshot == null
+        ? ""
+        : String(req.body.customerNameSnapshot).trim();
+  }
+  if (req.body.customerPhoneSnapshot !== undefined) {
+    update.customerPhoneSnapshot =
+      req.body.customerPhoneSnapshot == null
+        ? ""
+        : String(req.body.customerPhoneSnapshot).trim();
   }
 
   const incoming = (req.files || []).filter((f) => f && f.buffer);
