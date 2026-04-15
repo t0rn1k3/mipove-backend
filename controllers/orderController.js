@@ -15,6 +15,10 @@ const {
 } = require("../utils/orderContactGate");
 const asyncHandler = require("express-async-handler");
 const { ORDER_CATEGORIES, validateOrderCategory } = require("../config/orderCategories");
+const {
+  serializeOrderForApi,
+  serializeOrdersForApi,
+} = require("../utils/serializeOrder");
 
 const userSummary = "name email phone image";
 const orderingMasterSummary = "name email phone image slug specialty";
@@ -104,6 +108,22 @@ function parseNonNegativeOrSigned(value, fieldName) {
     throw err;
   }
   return n;
+}
+
+/**
+ * Multipart sends "true"/"false"; JSON may use booleans. Missing → false (create); for PATCH use only when key is present.
+ */
+function parsePriceNegotiable(value, { treatMissingAsFalse = true } = {}) {
+  if (value === undefined || value === null || value === "") {
+    return treatMissingAsFalse ? false : undefined;
+  }
+  if (typeof value === "boolean") return value;
+  const s = String(value).trim().toLowerCase();
+  if (s === "true" || s === "1") return true;
+  if (s === "false" || s === "0") return false;
+  const err = new Error("priceNegotiable must be true or false");
+  err.statusCode = 400;
+  throw err;
 }
 
 function parseBudget(raw, fallbackCurrency = "GEL") {
@@ -364,6 +384,9 @@ const createOrder = asyncHandler(async (req, res) => {
     description: description != null ? String(description).trim() : "",
     scheduledAt: parseScheduledAt(scheduledAt),
     price: parsePrice(price),
+    priceNegotiable: parsePriceNegotiable(req.body?.priceNegotiable, {
+      treatMissingAsFalse: true,
+    }),
     budget: parseBudget(budgetRaw),
     location: parseLocation(locationRaw),
     attachments: newPaths,
@@ -410,6 +433,7 @@ const createOrder = asyncHandler(async (req, res) => {
     const unlockedSet = await loadContactUnlockedSet(req.user._id, [String(data._id)]);
     data = applyMasterContactGate(data, req.user._id, unlockedSet);
   }
+  data = serializeOrderForApi(data);
 
   res.status(201).json({
     success: true,
@@ -464,7 +488,7 @@ const getOrders = asyncHandler(async (req, res) => {
       return res.json({
         success: true,
         count: orders.length,
-        data: orders,
+        data: serializeOrdersForApi(orders),
       });
     }
 
@@ -473,7 +497,7 @@ const getOrders = asyncHandler(async (req, res) => {
       Order.find(filter).sort(ORDERS_LIST_SORT).skip(offset).limit(limit + 1),
     ).lean();
     const hasMore = batch.length > limit;
-    const items = hasMore ? batch.slice(0, limit) : batch;
+    const items = serializeOrdersForApi(hasMore ? batch.slice(0, limit) : batch);
     const payload = {
       success: true,
       items,
@@ -494,7 +518,9 @@ const getOrders = asyncHandler(async (req, res) => {
       const orders = await orderDetailQuery(
         Order.find(filter).sort(ORDERS_LIST_SORT),
       ).lean();
-      const data = await applyMasterContactGateToOrders(orders, req.user._id);
+      const data = serializeOrdersForApi(
+        await applyMasterContactGateToOrders(orders, req.user._id),
+      );
       return res.json({
         success: true,
         count: data.length,
@@ -508,7 +534,9 @@ const getOrders = asyncHandler(async (req, res) => {
     ).lean();
     const hasMore = batch.length > limit;
     const pageOrders = hasMore ? batch.slice(0, limit) : batch;
-    const items = await applyMasterContactGateToOrders(pageOrders, req.user._id);
+    const items = serializeOrdersForApi(
+      await applyMasterContactGateToOrders(pageOrders, req.user._id),
+    );
     const payload = {
       success: true,
       items,
@@ -528,10 +556,11 @@ const getOrders = asyncHandler(async (req, res) => {
     const orders = await orderDetailQuery(
       Order.find(publicFilter).sort(ORDERS_LIST_SORT),
     ).lean();
-    const data =
+    const data = serializeOrdersForApi(
       req.user && req.user.role === "master"
         ? await applyMasterContactGateToOrders(orders, req.user._id)
-        : orders.map((o) => applyGuestOrderListGate(o, req.user));
+        : orders.map((o) => applyGuestOrderListGate(o, req.user)),
+    );
     return res.json({
       success: true,
       count: data.length,
@@ -545,10 +574,11 @@ const getOrders = asyncHandler(async (req, res) => {
   ).lean();
   const hasMore = batch.length > limit;
   const pageOrders = hasMore ? batch.slice(0, limit) : batch;
-  const items =
+  const items = serializeOrdersForApi(
     req.user && req.user.role === "master"
       ? await applyMasterContactGateToOrders(pageOrders, req.user._id)
-      : pageOrders.map((o) => applyGuestOrderListGate(o, req.user));
+      : pageOrders.map((o) => applyGuestOrderListGate(o, req.user)),
+  );
   const payload = {
     success: true,
     items,
@@ -600,6 +630,7 @@ const getOrderById = asyncHandler(async (req, res) => {
     ]);
     data = applyMasterContactGate(order, req.user._id, unlockedSet);
   }
+  data = serializeOrderForApi(data);
 
   res.json({
     success: true,
@@ -705,6 +736,14 @@ const updateOrder = asyncHandler(async (req, res) => {
         : String(req.body.customerPhoneSnapshot).trim();
   }
 
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, "priceNegotiable")) {
+    const v = parsePriceNegotiable(req.body.priceNegotiable, {
+      treatMissingAsFalse: false,
+    });
+    update.priceNegotiable =
+      v === undefined ? false : v;
+  }
+
   const incoming = (req.files || []).filter((f) => f && f.buffer);
   const existing = Array.isArray(order.attachments) ? order.attachments.length : 0;
   if (existing + incoming.length > MAX_ATTACHMENTS) {
@@ -745,6 +784,7 @@ const updateOrder = asyncHandler(async (req, res) => {
     const unlockedSet = await loadContactUnlockedSet(req.user._id, [String(updated._id)]);
     data = applyMasterContactGate(updated, req.user._id, unlockedSet);
   }
+  data = serializeOrderForApi(data);
 
   res.json({
     success: true,

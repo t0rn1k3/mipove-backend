@@ -60,6 +60,11 @@ const orderSchema = new mongoose.Schema(
       lat: { type: Number, default: null },
       lng: { type: Number, default: null },
     },
+    /**
+     * If true, the client may show a "Negotiable" label instead of the numeric range.
+     * Budget min/max remain stored as sent (filters / analytics); the API does not clear them.
+     */
+    priceNegotiable: { type: Boolean, default: false },
     /** Budget range from order submission form */
     budget: {
       min: { type: Number, min: 0, default: null },

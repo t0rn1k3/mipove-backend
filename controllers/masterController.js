@@ -10,6 +10,7 @@ const {
 } = require("../config/masterProfessions");
 const { uploadToB2, deleteFromB2ByPublicUrl } = require("../utils/uploadToB2");
 const { applyMasterContactGateToOrders } = require("../utils/orderContactGate");
+const { serializeOrdersForApi } = require("../utils/serializeOrder");
 const { hashPassword } = require("../utils/helpers");
 
 const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -35,7 +36,9 @@ const getMyFavoriteOrders = asyncHandler(async (req, res) => {
     .sort({ createdAt: -1 })
     .lean();
 
-  const data = await applyMasterContactGateToOrders(orders, req.user._id);
+  const data = serializeOrdersForApi(
+    await applyMasterContactGateToOrders(orders, req.user._id),
+  );
 
   res.json({
     success: true,
