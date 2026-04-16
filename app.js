@@ -19,11 +19,21 @@ const {
 
 const app = express();
 
-// CORS: allow frontend origin (must be specific for credentials)
-const frontendOrigin = process.env.FRONTEND_URL || "http://localhost:3000";
+/** Comma-separated origins, e.g. https://mipove.com,https://www.mipove.com (needed when both work). */
+function parseCorsAllowedOrigins() {
+  const raw = process.env.FRONTEND_URL || "http://localhost:3000";
+  return [...new Set(raw.split(",").map((s) => s.trim()).filter(Boolean))];
+}
+
+const corsAllowedOrigins = parseCorsAllowedOrigins();
+
 app.use(
   cors({
-    origin: frontendOrigin,
+    origin(origin, callback) {
+      if (!origin) return callback(null, true);
+      if (corsAllowedOrigins.includes(origin)) return callback(null, true);
+      callback(null, false);
+    },
     credentials: true,
   }),
 );
