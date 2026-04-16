@@ -9,15 +9,26 @@ const required = (name) => {
   return String(value).trim();
 };
 
-const b2Region = process.env.B2_REGION || "us-east-005";
-const b2Endpoint = required("B2_ENDPOINT");
-const b2KeyId = required("B2_KEY_ID");
-const b2AppKey = required("B2_APP_KEY");
-const b2Bucket = required("B2_BUCKET_NAME");
+/** e.g. https://s3.eu-central-003.backblazeb2.com → eu-central-003 */
+function inferB2RegionFromEndpoint(endpoint) {
+  const s = String(endpoint || "").trim();
+  const m = s.match(/s3\.([a-z0-9-]+)\.backblazeb2\.com/i);
+  return m ? m[1] : null;
+}
 
+const b2Endpoint = required("B2_ENDPOINT");
 const normalizedEndpoint = b2Endpoint.startsWith("http")
   ? b2Endpoint
   : `https://${b2Endpoint}`;
+
+const b2Region =
+  (process.env.B2_REGION && String(process.env.B2_REGION).trim()) ||
+  inferB2RegionFromEndpoint(normalizedEndpoint) ||
+  "us-east-005";
+
+const b2KeyId = required("B2_KEY_ID");
+const b2AppKey = required("B2_APP_KEY");
+const b2Bucket = required("B2_BUCKET_NAME");
 
 const s3 = new S3Client({
   region: b2Region,
