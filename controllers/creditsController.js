@@ -37,6 +37,30 @@ function requiredPaymentBearerToken() {
   return String(t).trim();
 }
 
+/** One clear error before Buy now if payment env is incomplete (see .env.example). */
+function assertCreditPurchaseEnv() {
+  const missing = [];
+  if (!process.env.PAYMENT_CALLBACK_URL?.trim()) {
+    missing.push("PAYMENT_CALLBACK_URL");
+  }
+  if (!process.env.PAYMENT_RETURN_URL?.trim()) {
+    missing.push("PAYMENT_RETURN_URL");
+  }
+  if (
+    !(process.env.PAYMENT_BOG_IPAY_TOKEN || process.env.IPAY_SECRET_KEY)?.trim()
+  ) {
+    missing.push("PAYMENT_BOG_IPAY_TOKEN or IPAY_SECRET_KEY");
+  }
+  if (!missing.length) return;
+  const err = new Error(
+    `Credits purchase is not configured. Set in .env: ${missing.join(
+      ", ",
+    )}. PAYMENT_CALLBACK_URL must be a public HTTPS URL to this API (e.g. https://<your-host>/api/webhooks/payment). For local dev, expose the API with ngrok or similar. See .env.example.`,
+  );
+  err.statusCode = 503;
+  throw err;
+}
+
 async function createBogIpayCheckoutSession({ amountGel, orderId, callbackUrl, returnUrl }) {
   const url =
     process.env.PAYMENT_BOG_IPAY_URL ||
@@ -285,13 +309,14 @@ const createPurchase = asyncHandler(async (req, res) => {
     throw err;
   }
 
-  const callbackUrl = requiredEnv("PAYMENT_CALLBACK_URL");
+  assertCreditPurchaseEnv();
+  const callbackUrl = String(process.env.PAYMENT_CALLBACK_URL).trim();
   if (!callbackUrl.startsWith("https://")) {
     const err = new Error("PAYMENT_CALLBACK_URL must use HTTPS");
     err.statusCode = 500;
     throw err;
   }
-  const returnUrl = requiredEnv("PAYMENT_RETURN_URL");
+  const returnUrl = String(process.env.PAYMENT_RETURN_URL).trim();
   const credits = Number(pack.credits || 0) + Number(pack.bonusCredits || 0);
 
   const PURCHASE_TTL_MS = 30 * 60 * 1000;

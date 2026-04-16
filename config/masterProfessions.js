@@ -17,6 +17,7 @@ const MASTER_PROFESSIONS = [
   { id: "shoe_Designer", label: "Shoe Designer" },
   { id: "photographer", label: "Photographer" },
   { id: "videographer", label: "Videographer" },
+  { id: "graphic_designer", label: "Graphic Designer" },
   { id: "restorer", label: "Restorer" },
   { id: "other", label: "Other" },
 ];
