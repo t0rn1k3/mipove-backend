@@ -2,9 +2,17 @@ const multer = require("multer");
 
 const fourMb = 4 * 1024 * 1024;
 
+const ALLOWED_IMAGE_MIMETYPES = [
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+];
+
+const MAX_PORTFOLIO_IMAGES = 30;
+
 const fileFilter = (req, file, cb) => {
-  const allowed = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
-  if (allowed.includes(file.mimetype)) {
+  if (ALLOWED_IMAGE_MIMETYPES.includes(file.mimetype)) {
     cb(null, true);
   } else {
     cb(
@@ -29,4 +37,7 @@ module.exports = {
   profileImageUpload,
   orderAttachmentsUpload,
   portfolioImagesUpload,
+  MAX_IMAGE_FILE_BYTES: fourMb,
+  MAX_PORTFOLIO_IMAGES,
+  ALLOWED_IMAGE_MIMETYPES,
 };

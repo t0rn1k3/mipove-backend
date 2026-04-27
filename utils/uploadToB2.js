@@ -1,4 +1,5 @@
-const { S3Client, PutObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
+const { S3Client, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand } = require("@aws-sdk/client-s3");
+const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const { randomUUID } = require("crypto");
 
 const required = (name) => {
@@ -46,6 +47,35 @@ const getPublicBaseUrl = () => {
   }
   return `${normalizedEndpoint.replace(/\/+$/, "")}/${b2Bucket}`;
 };
+
+/**
+ * S3 key for a new portfolio image (same layout as uploadToB2 "portfolio" folder).
+ * @param {string} originalName
+ */
+function buildPortfolioImageKey(originalName) {
+  const ext = String(originalName || "").split(".").pop() || "bin";
+  return `uploads/portfolio/${randomUUID()}.${ext}`;
+}
+
+/**
+ * Presigned PUT for browser → B2 (bypasses app/proxy body limits). Client must send Content-Type exactly as given.
+ * @param {string} key
+ * @param {string} contentType
+ * @param {number} [expiresIn]
+ */
+async function getPresignedPutPortfolio(key, contentType, expiresIn = 900) {
+  const cmd = new PutObjectCommand({
+    Bucket: b2Bucket,
+    Key: key,
+    ContentType: contentType || "application/octet-stream",
+  });
+  return getSignedUrl(s3, cmd, { expiresIn });
+}
+
+/** @returns {Promise<void>} */
+async function assertPortfolioObjectExists(key) {
+  await s3.send(new HeadObjectCommand({ Bucket: b2Bucket, Key: key }));
+}
 
 /**
  * @param {string | null | undefined} folder - subfolder under `uploads/` (e.g. profiles, portfolio, orders). Omit for flat `uploads/<uuid>.ext`.
@@ -147,4 +177,12 @@ async function deleteFromB2ByPublicUrl(publicUrl) {
   }
 }
 
-module.exports = { uploadToB2, deleteFromB2ByPublicUrl, publicPortfolioUrlToKey };
+module.exports = {
+  uploadToB2,
+  deleteFromB2ByPublicUrl,
+  publicPortfolioUrlToKey,
+  buildPortfolioImageKey,
+  getPresignedPutPortfolio,
+  assertPortfolioObjectExists,
+  getPublicBaseUrl,
+};

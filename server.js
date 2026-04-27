@@ -13,6 +13,12 @@ const startServer = async () => {
   await backfillMasterRatings();
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
+    if (process.env.NODE_ENV === "production") {
+      console.log(
+        "Upload tip: if portfolio/profile uploads fail in the browser with 'Failed to fetch' but work for small files, " +
+          "increase the reverse proxy body limit (e.g. nginx client_max_body_size to 25m) — not Express.",
+      );
+    }
   });
 };
 

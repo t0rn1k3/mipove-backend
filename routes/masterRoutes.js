@@ -2,6 +2,9 @@ const express = require("express");
 const router = express.Router();
 const {
   getProfessions,
+  getPortfolioUploadLimits,
+  presignPortfolioUploads,
+  commitPortfolioUploads,
   getMasters,
   getMasterBySlug,
   createMaster,
@@ -20,10 +23,10 @@ const {
   getMasterRatings,
 } = require("../controllers/ratingController");
 const { protect, authorize } = require("../middlewares/auth");
-const { portfolioImagesUpload } = require("../config/memoryMulter");
+const { portfolioImagesUpload, MAX_PORTFOLIO_IMAGES } = require("../config/memoryMulter");
 
 const handlePortfolioUpload = (req, res, next) => {
-  portfolioImagesUpload.array("images", 30)(req, res, (err) => {
+  portfolioImagesUpload.array("images", MAX_PORTFOLIO_IMAGES)(req, res, (err) => {
     if (err) {
       err.statusCode = 400;
       return next(err);
@@ -35,13 +38,37 @@ const handlePortfolioUpload = (req, res, next) => {
 router.route("/").get(getMasters).post(protect, authorize("admin"), createMaster);
 
 router.get("/professions", getProfessions);
+router.get("/portfolio/upload-limits", getPortfolioUploadLimits);
+
+router.post(
+  "/me/portfolio/presign",
+  protect,
+  authorize("master"),
+  presignPortfolioUploads,
+);
+router.post(
+  "/me/portfolio/commit",
+  protect,
+  authorize("master"),
+  commitPortfolioUploads,
+);
 
 router
   .route("/me/portfolio")
   .get(protect, authorize("master"), getMyPortfolio)
   // allow either POST or PATCH for appends
-  .post(protect, authorize("master"), handlePortfolioUpload, addPortfolioImages)
-  .patch(protect, authorize("master"), handlePortfolioUpload, addPortfolioImages)
+  .post(
+    protect,
+    authorize("master"),
+    handlePortfolioUpload,
+    addPortfolioImages,
+  )
+  .patch(
+    protect,
+    authorize("master"),
+    handlePortfolioUpload,
+    addPortfolioImages,
+  )
   .delete(protect, authorize("master"), removePortfolioImages);
 
 router
