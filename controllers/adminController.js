@@ -6,11 +6,47 @@ const slugify = require("../utils/slugify");
 const asyncHandler = require("express-async-handler");
 const { hashPassword } = require("../utils/helpers");
 
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+function toAdminUserShape(entity, forcedRole) {
+  const src = entity && entity.toObject ? entity.toObject() : entity || {};
+  const role = forcedRole || src.role;
+  return {
+    ...src,
+    role,
+    blocked: Boolean(src.isBlocked),
+  };
+}
+
+function parseOptionalTrimmedString(rawValue) {
+  if (rawValue === undefined) return undefined;
+  if (typeof rawValue !== "string") return null;
+  return rawValue.trim();
+}
+
 // @desc    Get all users
 // @route   GET /api/admin/users
 // @access  Private (admin)
 const getAllUsers = asyncHandler(async (req, res) => {
-  const users = await User.find()
+  const statusRaw =
+    req.query?.status != null && typeof req.query.status === "string"
+      ? req.query.status.trim().toLowerCase()
+      : "all";
+
+  if (!["all", "active", "blocked", "new"].includes(statusRaw)) {
+    const err = new Error("status is invalid");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const filter = {};
+  if (statusRaw === "active") filter.isBlocked = false;
+  if (statusRaw === "blocked") filter.isBlocked = true;
+  if (statusRaw === "new") {
+    filter.createdAt = { $gte: new Date(Date.now() - SEVEN_DAYS_MS) };
+  }
+
+  const users = await User.find(filter)
     .select("-password")
     .sort({ createdAt: -1 })
     .lean();
@@ -18,7 +54,7 @@ const getAllUsers = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     count: users.length,
-    data: users,
+    data: users.map((user) => toAdminUserShape(user)),
   });
 });
 
@@ -34,7 +70,7 @@ const getAllMasters = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     count: masters.length,
-    data: masters,
+    data: masters.map((master) => toAdminUserShape(master, "master")),
   });
 });
 
@@ -50,7 +86,7 @@ const getActiveUsers = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     count: users.length,
-    data: users,
+    data: users.map((user) => toAdminUserShape(user)),
   });
 });
 
@@ -66,7 +102,7 @@ const getBlockedUsers = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     count: users.length,
-    data: users,
+    data: users.map((user) => toAdminUserShape(user)),
   });
 });
 
@@ -74,10 +110,9 @@ const getBlockedUsers = asyncHandler(async (req, res) => {
 // @route   GET /api/admin/users/new
 // @access  Private (admin)
 const getNewUsers = asyncHandler(async (req, res) => {
-  const oneMonthAgo = new Date();
-  oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+  const sevenDaysAgo = new Date(Date.now() - SEVEN_DAYS_MS);
 
-  const users = await User.find({ createdAt: { $gte: oneMonthAgo } })
+  const users = await User.find({ createdAt: { $gte: sevenDaysAgo } })
     .select("-password")
     .sort({ createdAt: -1 })
     .lean();
@@ -85,7 +120,7 @@ const getNewUsers = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     count: users.length,
-    data: users,
+    data: users.map((user) => toAdminUserShape(user)),
   });
 });
 
@@ -125,14 +160,19 @@ const getGrowthRate = asyncHandler(async (req, res) => {
 // @route   POST /api/admin/masters
 // @access  Private (admin)
 const createMaster = asyncHandler(async (req, res) => {
-  const { name, email, phone, password } = req.body;
-  const emailNorm = email.toLowerCase().trim();
+  const name = parseOptionalTrimmedString(req.body?.name);
+  const email = parseOptionalTrimmedString(req.body?.email);
+  const password = req.body?.password;
+  const phone = parseOptionalTrimmedString(req.body?.phone);
+  const specialty = parseOptionalTrimmedString(req.body?.specialty);
+  const location = parseOptionalTrimmedString(req.body?.location);
 
-  if (!name || !email || !password) {
+  if (!name || !email || typeof password !== "string" || !password.trim()) {
     const err = new Error("Please provide name, email, and password");
     err.statusCode = 400;
     throw err;
   }
+  const emailNorm = email.toLowerCase();
 
   const [existingUser, existingMaster] = await Promise.all([
     User.findOne({ email: emailNorm }),
@@ -140,11 +180,11 @@ const createMaster = asyncHandler(async (req, res) => {
   ]);
   if (existingUser || existingMaster) {
     const err = new Error("Account with this email already exists");
-    err.statusCode = 409;
+    err.statusCode = 400;
     throw err;
   }
 
-  const hashedPassword = await hashPassword(password);
+  const hashedPassword = await hashPassword(password.trim());
   const slug = slugify(name) + "-" + Date.now().toString(36).slice(-6);
   const master = await Master.create({
     name,
@@ -152,14 +192,17 @@ const createMaster = asyncHandler(async (req, res) => {
     phone: phone || "",
     password: hashedPassword,
     slug,
+    specialty: specialty || "",
+    location: location || "",
   });
 
-  const data = master.toObject();
+  const data = toAdminUserShape(master, "master");
   delete data.password;
+  delete data.isBlocked;
 
   res.status(201).json({
     success: true,
-    data: { ...data, role: "master" },
+    data,
     message: "Master created successfully",
   });
 });
@@ -180,7 +223,7 @@ const getUser = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    data: user,
+    data: toAdminUserShape(user),
   });
 });
 
@@ -200,7 +243,7 @@ const getMaster = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    data: { ...master, role: "master" },
+    data: toAdminUserShape(master, "master"),
   });
 });
 
@@ -226,7 +269,7 @@ const blockUser = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    data: user,
+    data: toAdminUserShape(user),
     message: user.isBlocked ? "User blocked" : "User unblocked",
   });
 });
@@ -251,7 +294,7 @@ const unblockUser = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    data: user,
+    data: toAdminUserShape(user),
     message: "User unblocked",
   });
 });
@@ -276,8 +319,7 @@ const blockMaster = asyncHandler(async (req, res) => {
     throw err;
   }
 
-  const data = master.toObject ? master.toObject() : master;
-  data.role = "master";
+  const data = toAdminUserShape(master, "master");
   res.json({
     success: true,
     data,
@@ -303,8 +345,7 @@ const unblockMaster = asyncHandler(async (req, res) => {
     throw err;
   }
 
-  const data = master.toObject ? master.toObject() : master;
-  data.role = "master";
+  const data = toAdminUserShape(master, "master");
   res.json({
     success: true,
     data,
@@ -354,12 +395,100 @@ const getDashboardStats = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     data: {
+      users: totalUsers,
+      masters: totalMasters,
       totalUsers,
       totalMasters,
       activeUsers,
       blockedUsers,
       newUsersLastMonth: newUsers,
       growthRate: Math.round(growthRate * 10) / 10,
+    },
+  });
+});
+
+// @desc    Get master credits balance by master id
+// @route   GET /api/admin/credits/balance?masterId=<id>
+// @access  Private (admin)
+const getMasterCreditsBalance = asyncHandler(async (req, res) => {
+  const rawMasterId = req.query?.masterId;
+  const masterId = typeof rawMasterId === "string" ? rawMasterId.trim() : "";
+
+  if (!masterId || !mongoose.Types.ObjectId.isValid(masterId)) {
+    const err = new Error("masterId is invalid");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const master = await Master.findById(masterId).select("credits").lean();
+  if (!master) {
+    const err = new Error("Master not found");
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const balance =
+    typeof master.credits === "number" && Number.isFinite(master.credits)
+      ? master.credits
+      : 0;
+
+  res.json({
+    success: true,
+    data: {
+      balance,
+      currentBalance: balance,
+    },
+  });
+});
+
+// @desc    Get master credits transaction history by master id
+// @route   GET /api/admin/credits/history?masterId=<id>&page=<n>&limit=<n>
+// @access  Private (admin)
+const getMasterCreditsHistory = asyncHandler(async (req, res) => {
+  const rawMasterId = req.query?.masterId;
+  const masterId = typeof rawMasterId === "string" ? rawMasterId.trim() : "";
+
+  if (!masterId || !mongoose.Types.ObjectId.isValid(masterId)) {
+    const err = new Error("masterId is invalid");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const masterExists = await Master.exists({ _id: masterId });
+  if (!masterExists) {
+    const err = new Error("Master not found");
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
+  const limitRaw = parseInt(String(req.query.limit || "20"), 10);
+  const limit = Math.min(
+    100,
+    Math.max(1, Number.isFinite(limitRaw) ? limitRaw : 20),
+  );
+  const skip = (page - 1) * limit;
+
+  const filter = { master: masterId };
+  const [total, transactions] = await Promise.all([
+    CreditTransaction.countDocuments(filter),
+    CreditTransaction.find(filter)
+      .select("type amount action balanceAfter metadata createdAt")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+  ]);
+
+  const pages = total === 0 ? 0 : Math.ceil(total / limit);
+
+  res.json({
+    success: true,
+    data: {
+      transactions,
+      total,
+      page,
+      pages,
     },
   });
 });
@@ -382,19 +511,18 @@ const adjustMasterCredits = asyncHandler(async (req, res) => {
   }
 
   const amount = Number(rawAmount);
-  if (!Number.isFinite(amount) || amount === 0) {
-    const err = new Error("amount must be a non-zero number");
+  if (!Number.isInteger(amount) || amount === 0) {
+    const err = new Error("amount must be a non-zero integer");
     err.statusCode = 400;
     throw err;
   }
 
-  const note =
-    rawNote != null && typeof rawNote === "string" ? rawNote.trim() : "";
-  if (!note) {
-    const err = new Error("note is required");
+  if (rawNote != null && typeof rawNote !== "string") {
+    const err = new Error("note is invalid");
     err.statusCode = 400;
     throw err;
   }
+  const note = typeof rawNote === "string" ? rawNote.trim() : "";
 
   const session = await mongoose.startSession();
   try {
@@ -431,7 +559,8 @@ const adjustMasterCredits = asyncHandler(async (req, res) => {
           amount,
           balanceBefore,
           balanceAfter,
-          metadata: { note },
+          action: "admin_adjust",
+          metadata: note ? { note } : {},
         },
       ],
       { session },
@@ -459,6 +588,91 @@ const adjustMasterCredits = asyncHandler(async (req, res) => {
   }
 });
 
+// @desc    Update master profile fields
+// @route   PATCH /api/admin/masters/:id
+// @access  Private (admin)
+const updateMaster = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    const err = new Error("Master not found");
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const fieldNames = ["name", "email", "phone", "specialty", "location", "bio"];
+  const updates = {};
+
+  for (const field of fieldNames) {
+    const parsed = parseOptionalTrimmedString(req.body?.[field]);
+    if (parsed === null) {
+      const err = new Error(`${field} is invalid`);
+      err.statusCode = 400;
+      throw err;
+    }
+    if (parsed !== undefined) {
+      updates[field] = parsed;
+    }
+  }
+
+  if (!Object.keys(updates).length) {
+    const err = new Error("At least one field is required");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updates, "name")) {
+    if (!updates.name || updates.name.length > 100) {
+      const err = new Error("name is invalid");
+      err.statusCode = 400;
+      throw err;
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updates, "email")) {
+    if (!updates.email) {
+      const err = new Error("email is invalid");
+      err.statusCode = 400;
+      throw err;
+    }
+    updates.email = updates.email.toLowerCase();
+
+    const [existingUser, existingMaster] = await Promise.all([
+      User.exists({ email: updates.email }),
+      Master.exists({ email: updates.email, _id: { $ne: id } }),
+    ]);
+    if (existingUser || existingMaster) {
+      const err = new Error("Email already in use");
+      err.statusCode = 409;
+      throw err;
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updates, "bio")) {
+    if (updates.bio.length > 1000) {
+      const err = new Error("bio is invalid");
+      err.statusCode = 400;
+      throw err;
+    }
+  }
+
+  const master = await Master.findByIdAndUpdate(id, updates, {
+    new: true,
+    runValidators: true,
+  })
+    .select("-password")
+    .lean();
+
+  if (!master) {
+    const err = new Error("Master not found");
+    err.statusCode = 404;
+    throw err;
+  }
+
+  res.json({
+    data: toAdminUserShape(master, "master"),
+  });
+});
+
 module.exports = {
   getAllUsers,
   getUser,
@@ -474,5 +688,8 @@ module.exports = {
   blockMaster,
   unblockMaster,
   getDashboardStats,
+  getMasterCreditsBalance,
+  getMasterCreditsHistory,
   adjustMasterCredits,
+  updateMaster,
 };

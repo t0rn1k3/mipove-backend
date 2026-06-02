@@ -10,11 +10,14 @@ const {
   getNewUsers,
   getGrowthRate,
   createMaster,
+  updateMaster,
   blockUser,
   unblockUser,
   blockMaster,
   unblockMaster,
   getDashboardStats,
+  getMasterCreditsBalance,
+  getMasterCreditsHistory,
   adjustMasterCredits,
 } = require("../controllers/adminController");
 const { protect, authorize } = require("../middlewares/auth");
@@ -22,6 +25,8 @@ const { protect, authorize } = require("../middlewares/auth");
 router.use(protect, authorize("admin"));
 
 router.post("/credits/adjust", adjustMasterCredits);
+router.get("/credits/balance", getMasterCreditsBalance);
+router.get("/credits/history", getMasterCreditsHistory);
 router.get("/stats", getDashboardStats);
 router.get("/stats/growth", getGrowthRate);
 
@@ -37,6 +42,7 @@ router.post("/users/:id/unblock", unblockUser);
 router.get("/masters", getAllMasters);
 router.post("/masters", createMaster);
 router.get("/masters/:id", getMaster);
+router.patch("/masters/:id", updateMaster);
 router.put("/masters/:id/block", blockMaster);
 router.put("/masters/:id/unblock", unblockMaster);
 router.post("/masters/:id/unblock", unblockMaster);
